@@ -1,9 +1,9 @@
 package main
 
 import (
-	"io"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 func removeWatermarkHandler() http.HandlerFunc {
@@ -13,7 +13,7 @@ func removeWatermarkHandler() http.HandlerFunc {
 			return
 		}
 
-		// 最小流程先收 image + mask，后续再把这里替换成真实图像修复算法或模型接口。
+		// 本地去水印先使用遮罩邻域扩散算法，避免把用户图片发给外部服务。
 		if err := r.ParseMultipartForm(32 * 1024 * 1024); err != nil {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid multipart form"})
 			return
@@ -33,24 +33,22 @@ func removeWatermarkHandler() http.HandlerFunc {
 		}
 		defer maskFile.Close()
 
-		// 读取 mask 是为了验证前端确实生成并上传了标记区域。
-		maskBytes, err := io.ReadAll(io.LimitReader(maskFile, 8*1024*1024))
-		if err != nil || len(maskBytes) == 0 {
-			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "mask file is invalid"})
+		result, err := removeWatermarkLocal(imageFile, maskFile)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 			return
 		}
 
-		contentType := imageContentType(imageHeader.Filename)
-		if contentType == "" {
-			contentType = "image/png"
-		}
-
-		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Content-Disposition", `attachment; filename="watermark-result.png"`)
-		w.Header().Set("X-Watermark-Mode", "placeholder")
+		log.Printf("local watermark remove: image=%q width=%d height=%d masked_pixels=%d iterations=%d", imageHeader.Filename, result.Width, result.Height, result.MaskedPixels, result.Iterations)
+		w.Header().Set("Content-Type", result.ContentType)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+result.Filename+`"`)
+		w.Header().Set("X-Watermark-Mode", "local")
+		w.Header().Set("X-Image-Width", strconv.Itoa(result.Width))
+		w.Header().Set("X-Image-Height", strconv.Itoa(result.Height))
+		w.Header().Set("X-Masked-Pixels", strconv.Itoa(result.MaskedPixels))
 		w.WriteHeader(http.StatusOK)
-		if _, err := io.Copy(w, imageFile); err != nil {
-			log.Printf("write watermark placeholder image: %v", err)
+		if _, err := w.Write(result.Data); err != nil {
+			log.Printf("write watermark result image: %v", err)
 		}
 	}
 }

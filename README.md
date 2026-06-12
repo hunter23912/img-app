@@ -13,6 +13,9 @@
 - 已实现：`POST /api/generate` 文生图代理接口。
 - 已实现：`POST /api/edit` 图编辑代理接口。
 - 已实现：手机端基础页面和 Vite `/api` 代理。
+- 已实现：`POST /api/compress` 本地单图图片压缩。
+- 已实现：`POST /api/compress/batch` 本地批量图片压缩并打包 zip。
+- 已实现：`POST /api/watermark/remove` 本地遮罩去水印。
 
 目录大致如下：
 
@@ -47,6 +50,10 @@ go mod init img-app/backend
 - 支持保存或下载结果图。
 
 暂时不做用户系统、历史记录、计费、数据库、复杂图片管理。
+
+图片压缩当前也走本地算法：前端上传图片和参数，Go 后端用标准库解码图片，再按原尺寸重编码为 JPG 或 PNG。JPG 使用质量参数控制体积，PNG 使用最高压缩等级重编码并剥离原始元数据。批量压缩会复用同一套压缩逻辑，把成功处理的图片和 `manifest.json` 明细打进 zip 返回。
+
+去水印当前优先走本地算法：前端上传原图和涂抹生成的 mask，Go 后端在本机做遮罩邻域扩散修复并返回 PNG。这个方案不消耗中转站额度，也不会把图片发给外部模型；适合小面积文字水印、纯色或渐变背景。复杂纹理、人脸、文字内容被水印覆盖时，效果会明显弱于专业图像修复模型。
 
 ## 推荐架构
 
@@ -262,15 +269,18 @@ pnpm build
 页面输入 prompt -> Go 后端 -> 中转站 -> 返回图片 -> 页面展示
 ```
 
-## 下一步
+## 当前接口
 
-当前已经完成 Go 后端最小服务、文生图接口和图编辑接口：
+当前已经完成这些接口：
 
 - `GET /api/health` 返回 `{ "ok": true }`
 - 服务监听 `localhost:8080`
 - 前端后续通过 Vite 代理访问它
 - `POST /api/generate` 会调用兼容 OpenAI Images API 的中转站。
 - `POST /api/edit` 会转发 multipart 图片到中转站。
+- `POST /api/compress` 会在本地保持原尺寸重编码单张 JPG/PNG。
+- `POST /api/compress/batch` 会在本地批量压缩多张图片，返回 zip 压缩包。
+- `POST /api/watermark/remove` 会在本地根据 mask 修复标记区域。
 
 本地运行方式：
 
@@ -291,4 +301,4 @@ pnpm dev
 http://localhost:5173
 ```
 
-后续下一步是用真实 API key 测试文生图和图编辑，再根据中转站实际返回错误做细节调整。
+后续下一步是继续优化本地去水印效果，补充更多后端测试，并在需要发布时让 Go 后端直接托管 `dist/`。

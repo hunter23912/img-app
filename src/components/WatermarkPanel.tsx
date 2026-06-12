@@ -7,6 +7,7 @@ interface WatermarkResult {
   url: string
   blob: Blob
   mode: string
+  maskedPixels: number
 }
 
 export function WatermarkPanel() {
@@ -19,7 +20,7 @@ export function WatermarkPanel() {
   const [isDrawing, setIsDrawing] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [hasMask, setHasMask] = useState(false)
-  const [message, setMessage] = useState('选择图片后，在水印区域涂抹标记。')
+  const [message, setMessage] = useState('选择图片后，在水印区域涂抹标记，本地处理不会上传到外部模型。')
 
   useEffect(() => {
     return () => {
@@ -41,7 +42,7 @@ export function WatermarkPanel() {
     if (!nextFile) {
       setSourceURL('')
       clearCanvas()
-      setMessage('选择图片后，在水印区域涂抹标记。')
+      setMessage('选择图片后，在水印区域涂抹标记，本地处理不会上传到外部模型。')
       return
     }
 
@@ -83,7 +84,7 @@ export function WatermarkPanel() {
 
     maskContext.clearRect(0, 0, maskCanvas.width, maskCanvas.height)
     setHasMask(false)
-    setMessage(file ? '已清空标记区域。' : '选择图片后，在水印区域涂抹标记。')
+    setMessage(file ? '已清空标记区域。' : '选择图片后，在水印区域涂抹标记，本地处理不会上传到外部模型。')
   }
 
   function clearCanvas() {
@@ -142,15 +143,15 @@ export function WatermarkPanel() {
 
     setIsSubmitting(true)
     setResult(null)
-    setMessage('正在提交去水印任务...')
+    setMessage('正在本地处理标记区域...')
 
     try {
       const mask = await canvasToPNG(maskCanvas)
       const nextResult = await removeWatermark({ image: file, mask })
       setResult(nextResult)
       setMessage(
-        nextResult.mode === 'placeholder'
-          ? '最小流程已跑通：后端收到图片和标记区域。当前先返回原图占位。'
+        nextResult.mode === 'local'
+          ? `本地去水印完成，已处理 ${nextResult.maskedPixels || '标记'} 个像素。`
           : '去水印处理完成。'
       )
     } catch (error) {
@@ -165,7 +166,7 @@ export function WatermarkPanel() {
       <div className="card-body gap-4 p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="card-title text-xl font-black text-slate-950">去水印</h2>
-          <span className="badge badge-soft badge-warning rounded-full border-0 px-3 py-3">标记模式</span>
+          <span className="badge badge-soft badge-warning rounded-full border-0 px-3 py-3">本地处理</span>
         </div>
 
         <label className="flex min-h-40 cursor-pointer items-center justify-center rounded-3xl border border-dashed border-amber-300/70 bg-amber-50/70 px-6 text-center text-sm font-bold text-amber-800 transition hover:bg-amber-50">

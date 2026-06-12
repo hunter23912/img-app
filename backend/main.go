@@ -13,6 +13,7 @@ func main() {
 	mux.HandleFunc("/api/generate", generateHandler(config))
 	mux.HandleFunc("/api/edit", editHandler(config))
 	mux.HandleFunc("/api/compress", compressHandler())
+	mux.HandleFunc("/api/compress/batch", compressBatchHandler())
 	mux.HandleFunc("/api/watermark/remove", removeWatermarkHandler())
 
 	log.Printf("backend starting")

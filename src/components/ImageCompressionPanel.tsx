@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { compressImageOnServer } from '../api/images'
+import { compressImageOnServer, compressImagesBatchOnServer } from '../api/images'
 import {
   compressionPercent,
   extensionFromOutput,
@@ -15,6 +15,7 @@ const outputOptions: Array<{ value: CompressionOutputType; label: string }> = [
 ]
 
 interface CompressionResult {
+  kind: 'single'
   url: string
   blob: Blob
   width: number
@@ -26,10 +27,24 @@ interface CompressionResult {
   savedBytes: number
 }
 
+interface BatchCompressionResult {
+  kind: 'batch'
+  url: string
+  blob: Blob
+  fileCount: number
+  successCount: number
+  failedCount: number
+  originalBytes: number
+  compressedBytes: number
+  savedBytes: number
+}
+
+type CompressionPanelResult = CompressionResult | BatchCompressionResult
+
 export function ImageCompressionPanel() {
-  const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<File[]>([])
   const [sourcePreview, setSourcePreview] = useState('')
-  const [result, setResult] = useState<CompressionResult | null>(null)
+  const [result, setResult] = useState<CompressionPanelResult | null>(null)
   const [quality, setQuality] = useState(0.82)
   const [outputType, setOutputType] = useState<CompressionOutputType>('auto')
   const [isCompressing, setIsCompressing] = useState(false)
@@ -47,43 +62,69 @@ export function ImageCompressionPanel() {
     }
   }, [result])
 
-  function handleFileChange(nextFile: File | null) {
-    setFile(nextFile)
+  function handleFilesChange(nextFiles: File[]) {
+    setFiles(nextFiles)
     setResult(null)
 
-    if (!nextFile) {
+    if (sourcePreview) {
+      URL.revokeObjectURL(sourcePreview)
+    }
+
+    if (nextFiles.length === 0) {
       setSourcePreview('')
       setMessage('等待选择图片。')
       return
     }
 
-    setSourcePreview(URL.createObjectURL(nextFile))
-    setMessage(`原图大小：${formatBytes(nextFile.size)}`)
+    setSourcePreview(URL.createObjectURL(nextFiles[0]))
+    const totalBytes = nextFiles.reduce((total, nextFile) => total + nextFile.size, 0)
+    setMessage(
+      nextFiles.length === 1
+        ? `原图大小：${formatBytes(nextFiles[0].size)}`
+        : `已选择 ${nextFiles.length} 张图片，总大小 ${formatBytes(totalBytes)}。`
+    )
   }
 
   async function handleCompress() {
-    if (!file) {
-      setMessage('请先选择一张图片。')
+    if (files.length === 0) {
+      setMessage('请先选择图片。')
       return
     }
 
     setIsCompressing(true)
     setResult(null)
-    setMessage('正在压缩图片...')
+    setMessage(files.length === 1 ? '正在压缩图片...' : `正在批量压缩 ${files.length} 张图片...`)
 
     try {
-      const compressed = await compressImageOnServer({
-        image: file,
+      if (files.length === 1) {
+        const compressed = await compressImageOnServer({
+          image: files[0],
+          quality,
+          outputType,
+        })
+
+        setResult({ kind: 'single', ...compressed })
+        const percent = compressionPercent(compressed.originalBytes, compressed.compressedBytes)
+        setMessage(
+          compressed.savedBytes > 0
+            ? `压缩完成：节省 ${formatBytes(compressed.savedBytes)}，约 ${percent}%。`
+            : `已完成重编码，但结果比原图大 ${formatBytes(Math.abs(compressed.savedBytes))}。建议改用 JPG 或降低质量。`
+        )
+        return
+      }
+
+      const compressed = await compressImagesBatchOnServer({
+        images: files,
         quality,
         outputType,
       })
 
-      setResult(compressed)
+      setResult({ kind: 'batch', ...compressed })
       const percent = compressionPercent(compressed.originalBytes, compressed.compressedBytes)
       setMessage(
         compressed.savedBytes > 0
-          ? `压缩完成：节省 ${formatBytes(compressed.savedBytes)}，约 ${percent}%。`
-          : `已完成重编码，但结果比原图大 ${formatBytes(Math.abs(compressed.savedBytes))}。建议改用 JPG 或降低质量。`
+          ? `批量压缩完成：成功 ${compressed.successCount} 张，节省 ${formatBytes(compressed.savedBytes)}，约 ${percent}%。`
+          : `批量压缩完成：成功 ${compressed.successCount} 张，但压缩包比原图大 ${formatBytes(Math.abs(compressed.savedBytes))}。`
       )
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '图片压缩失败。')
@@ -92,8 +133,11 @@ export function ImageCompressionPanel() {
     }
   }
 
-  const downloadName = `compressed-image.${extensionFromOutput(result?.output || 'jpg')}`
+  const singleResult = result?.kind === 'single' ? result : null
+  const batchResult = result?.kind === 'batch' ? result : null
+  const downloadName = `compressed-image.${extensionFromOutput(singleResult?.output || 'jpg')}`
   const savedPercent = result ? compressionPercent(result.originalBytes, result.compressedBytes) : 0
+  const fileCountLabel = files.length > 1 ? `已选择 ${files.length} 张` : '选择图片'
 
   return (
     <section className="card rounded-[1.4rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur">
@@ -108,17 +152,23 @@ export function ImageCompressionPanel() {
             <input
               accept="image/*"
               className="hidden"
+              multiple
               type="file"
-              onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
+              onChange={(event) => handleFilesChange(Array.from(event.target.files ?? []))}
             />
             {sourcePreview ? (
-              <img
-                className="h-full max-h-64 w-full object-contain"
-                src={sourcePreview}
-                alt="待压缩图片预览"
-              />
+              <div className="grid w-full gap-2 p-3">
+                <img
+                  className="mx-auto h-full max-h-56 w-full object-contain"
+                  src={sourcePreview}
+                  alt="待压缩图片预览"
+                />
+                <span className="text-center text-xs font-black text-cyan-800">
+                  {files.length === 1 ? files[0].name : fileCountLabel}
+                </span>
+              </div>
             ) : (
-              <span>选择图片</span>
+              <span>选择图片，可多选</span>
             )}
           </label>
 
@@ -174,7 +224,7 @@ export function ImageCompressionPanel() {
                 压缩中...
               </>
             ) : (
-              '压缩图片'
+              files.length > 1 ? '批量压缩' : '压缩图片'
             )}
           </button>
         </div>
@@ -186,7 +236,7 @@ export function ImageCompressionPanel() {
         {result && (
           <div className="grid gap-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Metric label="原图" value={formatBytes(result.originalBytes)} />
+              <Metric label={batchResult ? '总原图' : '原图'} value={formatBytes(result.originalBytes)} />
               <Metric label="输出" value={formatBytes(result.compressedBytes)} />
               <Metric
                 label={result.savedBytes >= 0 ? '节省' : '增大'}
@@ -200,24 +250,40 @@ export function ImageCompressionPanel() {
               />
             </div>
 
-            <div className="grid overflow-hidden rounded-[1.25rem] border border-white/80 bg-gradient-to-br from-slate-50 to-cyan-50/70 p-2 shadow-inner shadow-slate-200/70">
-              <img
-                className="mx-auto h-auto max-h-[55svh] max-w-full rounded-2xl object-contain"
-                src={result.url}
-                alt="压缩结果"
-              />
-            </div>
+            {singleResult && (
+              <div className="grid overflow-hidden rounded-[1.25rem] border border-white/80 bg-gradient-to-br from-slate-50 to-cyan-50/70 p-2 shadow-inner shadow-slate-200/70">
+                <img
+                  className="mx-auto h-auto max-h-[55svh] max-w-full rounded-2xl object-contain"
+                  src={singleResult.url}
+                  alt="压缩结果"
+                />
+              </div>
+            )}
+
+            {batchResult && (
+              <div className="grid grid-cols-3 gap-2">
+                <Metric label="总数" value={`${batchResult.fileCount} 张`} />
+                <Metric label="成功" value={`${batchResult.successCount} 张`} tone="good" />
+                <Metric
+                  label="失败"
+                  value={`${batchResult.failedCount} 张`}
+                  tone={batchResult.failedCount > 0 ? 'warn' : 'default'}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
               <p className="px-1 text-xs font-semibold text-slate-500">
-                输出尺寸：{result.width}x{result.height}（保持原尺寸） · 输出格式：{result.output.toUpperCase()}
+                {singleResult
+                  ? `输出尺寸：${singleResult.width}x${singleResult.height}（保持原尺寸） · 输出格式：${singleResult.output.toUpperCase()}`
+                  : '压缩包内包含所有成功压缩的图片和 manifest.json 明细。'}
               </p>
               <a
                 className="btn btn-soft btn-info w-full rounded-2xl font-black sm:w-auto"
-                href={result.url}
-                download={downloadName}
+                href={singleResult ? singleResult.url : result.url}
+                download={singleResult ? downloadName : 'compressed-images.zip'}
               >
-                下载压缩图
+                {singleResult ? '下载压缩图' : '下载压缩包'}
               </a>
             </div>
           </div>

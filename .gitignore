@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 .env
+*.png
 **/.env
 backend/env
 

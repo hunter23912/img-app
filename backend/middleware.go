@@ -13,7 +13,7 @@ func withCORS(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Expose-Headers", "X-Image-Width, X-Image-Height, X-Image-Source-Format, X-Image-Output, X-Original-Bytes, X-Compressed-Bytes, X-Saved-Bytes, X-Watermark-Mode")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Image-Width, X-Image-Height, X-Image-Source-Format, X-Image-Output, X-Original-Bytes, X-Compressed-Bytes, X-Saved-Bytes, X-Watermark-Mode, X-Masked-Pixels, X-Batch-File-Count, X-Batch-Success-Count, X-Batch-Failed-Count, X-Batch-Original-Bytes, X-Batch-Compressed-Bytes, X-Batch-Saved-Bytes")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
