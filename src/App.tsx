@@ -2,7 +2,6 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { editImage, generateImage } from './api/images'
-import { BottomNav } from './components/BottomNav'
 import { ImageFormPanel } from './components/ImageFormPanel'
 import { ResultPanel } from './components/ResultPanel'
 import { StatusCard } from './components/StatusCard'
@@ -81,7 +80,7 @@ function App() {
   }
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-4 px-4 pb-40 pt-5 sm:px-5">
+    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-4 px-4 pb-5 pt-5 sm:px-5">
       <header className="flex items-start justify-between gap-4 px-1 pt-1">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700/70">
@@ -122,8 +121,6 @@ function App() {
           onShare={handleShareImage}
         />
       </div>
-
-      <BottomNav />
     </main>
   )
 }
