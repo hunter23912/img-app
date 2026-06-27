@@ -3,25 +3,16 @@ import type { FormEvent } from 'react'
 
 import { editImage, generateImage } from './api/images'
 import { BottomNav } from './components/BottomNav'
-import { ImageCompressionPanel } from './components/ImageCompressionPanel'
 import { ImageFormPanel } from './components/ImageFormPanel'
 import { ResultPanel } from './components/ResultPanel'
 import { StatusCard } from './components/StatusCard'
-import { WatermarkPanel } from './components/WatermarkPanel'
 import { keepOriginalSize, sizeOptions } from './constants/image'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useImageShare } from './hooks/useImageShare'
 import { useSourceImagePreview } from './hooks/useSourceImagePreview'
-import type { AppTab, ImageMode } from './types/image'
-
-const tabTitles: Record<AppTab, { title: string; subtitle: string }> = {
-  image: { title: '图片生成', subtitle: 'Generate' },
-  compress: { title: '图片压缩', subtitle: 'Compress' },
-  watermark: { title: '去水印', subtitle: 'Cleanup' },
-}
+import type { ImageMode } from './types/image'
 
 function App() {
-  const [activeTab, setActiveTab] = useState<AppTab>('image')
   const [mode, setMode] = useState<ImageMode>('generate')
   const [prompt, setPrompt] = useState('')
   const [generateSize, setGenerateSize] = useState(sizeOptions[0].value)
@@ -89,63 +80,50 @@ function App() {
     await shareImage(resultImage)
   }
 
-  const currentTitle = tabTitles[activeTab]
-  const showBackendStatus = activeTab === 'image'
-
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-4 px-4 pb-28 pt-5 sm:px-5">
+    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-4 px-4 pb-40 pt-5 sm:px-5">
       <header className="flex items-start justify-between gap-4 px-1 pt-1">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700/70">
-            {currentTitle.subtitle}
+            Generate
           </p>
           <h1 className="mt-2 text-4xl font-black leading-none tracking-tight text-slate-950">
-            {currentTitle.title}
+            图片生成
           </h1>
         </div>
-        {showBackendStatus && (
-          <span className={`badge badge-soft mt-1 shrink-0 rounded-full border-0 px-3 py-3 shadow-sm ${healthClass}`}>
-            {healthLabel}
-          </span>
-        )}
+        <span className={`badge badge-soft mt-1 shrink-0 rounded-full border-0 px-3 py-3 shadow-sm ${healthClass}`}>
+          {healthLabel}
+        </span>
       </header>
 
       <div className="grid gap-3">
-        {activeTab === 'image' && (
-          <>
-            <StatusCard isConfigured={isConfigured} />
+        <StatusCard isConfigured={isConfigured} />
 
-            <ImageFormPanel
-              mode={mode}
-              prompt={prompt}
-              generateSize={generateSize}
-              editSize={editSize}
-              sourcePreview={sourcePreview}
-              sourceSize={sourceSize}
-              isSubmitting={isSubmitting}
-              onModeChange={setMode}
-              onPromptChange={setPrompt}
-              onGenerateSizeChange={setGenerateSize}
-              onEditSizeChange={setEditSize}
-              onSourceImageChange={handleImageChange}
-              onSubmit={handleSubmit}
-            />
+        <ImageFormPanel
+          mode={mode}
+          prompt={prompt}
+          generateSize={generateSize}
+          editSize={editSize}
+          sourcePreview={sourcePreview}
+          sourceSize={sourceSize}
+          isSubmitting={isSubmitting}
+          onModeChange={setMode}
+          onPromptChange={setPrompt}
+          onGenerateSizeChange={setGenerateSize}
+          onEditSizeChange={setEditSize}
+          onSourceImageChange={handleImageChange}
+          onSubmit={handleSubmit}
+        />
 
-            <ResultPanel
-              image={resultImage}
-              message={message}
-              isSharing={isSharing}
-              onShare={handleShareImage}
-            />
-          </>
-        )}
-
-        {activeTab === 'compress' && <ImageCompressionPanel />}
-
-        {activeTab === 'watermark' && <WatermarkPanel />}
+        <ResultPanel
+          image={resultImage}
+          message={message}
+          isSharing={isSharing}
+          onShare={handleShareImage}
+        />
       </div>
 
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNav />
     </main>
   )
 }

@@ -1,6 +1,6 @@
 export type ImageMode = 'generate' | 'edit'
 
-export type AppTab = 'image' | 'compress' | 'watermark'
+export type AppTab = 'image'
 
 export type HealthState = 'checking' | 'online' | 'offline'
 

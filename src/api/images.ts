@@ -1,6 +1,5 @@
 import { imageModel } from '../constants/image'
 import type { HealthResponse, ImageResponse } from '../types/image'
-import type { CompressionOutputType } from '../utils/compressImage'
 
 export async function fetchHealth() {
   const response = await fetch('/api/health')
@@ -45,112 +44,6 @@ export async function editImage(input: {
   })
 
   return parseImageResponse(response)
-}
-
-export async function compressImageOnServer(input: {
-  image: File
-  outputType: CompressionOutputType
-  quality: number
-}) {
-  const formData = new FormData()
-  formData.append('image', input.image)
-  formData.append(
-    'output',
-    input.outputType === 'auto' ? 'auto' : input.outputType === 'image/jpeg' ? 'jpg' : 'png'
-  )
-  formData.append('quality', String(Math.round(input.quality * 100)))
-
-  const response = await fetch('/api/compress', {
-    method: 'POST',
-    body: formData,
-  })
-
-  if (!response.ok) {
-    const data = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(data?.error || `压缩失败：${response.status}`)
-  }
-
-  const blob = await response.blob()
-  return {
-    blob,
-    url: URL.createObjectURL(blob),
-    width: Number(response.headers.get('X-Image-Width')) || 0,
-    height: Number(response.headers.get('X-Image-Height')) || 0,
-    sourceFormat: response.headers.get('X-Image-Source-Format') || '',
-    output: response.headers.get('X-Image-Output') || '',
-    originalBytes: Number(response.headers.get('X-Original-Bytes')) || input.image.size,
-    compressedBytes: Number(response.headers.get('X-Compressed-Bytes')) || blob.size,
-    savedBytes: Number(response.headers.get('X-Saved-Bytes')) || input.image.size - blob.size,
-  }
-}
-
-export async function compressImagesBatchOnServer(input: {
-  images: File[]
-  outputType: CompressionOutputType
-  quality: number
-}) {
-  const formData = new FormData()
-  input.images.forEach((image) => {
-    formData.append('images', image)
-  })
-  formData.append(
-    'output',
-    input.outputType === 'auto' ? 'auto' : input.outputType === 'image/jpeg' ? 'jpg' : 'png'
-  )
-  formData.append('quality', String(Math.round(input.quality * 100)))
-
-  const response = await fetch('/api/compress/batch', {
-    method: 'POST',
-    body: formData,
-  })
-
-  if (!response.ok) {
-    const data = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(data?.error || `批量压缩失败：${response.status}`)
-  }
-
-  const blob = await response.blob()
-  return {
-    blob,
-    url: URL.createObjectURL(blob),
-    fileCount: Number(response.headers.get('X-Batch-File-Count')) || input.images.length,
-    successCount: Number(response.headers.get('X-Batch-Success-Count')) || 0,
-    failedCount: Number(response.headers.get('X-Batch-Failed-Count')) || 0,
-    originalBytes:
-      Number(response.headers.get('X-Batch-Original-Bytes')) ||
-      input.images.reduce((total, image) => total + image.size, 0),
-    compressedBytes: Number(response.headers.get('X-Batch-Compressed-Bytes')) || blob.size,
-    savedBytes:
-      Number(response.headers.get('X-Batch-Saved-Bytes')) ||
-      input.images.reduce((total, image) => total + image.size, 0) - blob.size,
-  }
-}
-
-export async function removeWatermark(input: {
-  image: File
-  mask: Blob
-}) {
-  const formData = new FormData()
-  formData.append('image', input.image)
-  formData.append('mask', input.mask, 'mask.png')
-
-  const response = await fetch('/api/watermark/remove', {
-    method: 'POST',
-    body: formData,
-  })
-
-  if (!response.ok) {
-    const data = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(data?.error || `去水印失败：${response.status}`)
-  }
-
-  const blob = await response.blob()
-  return {
-    blob,
-    url: URL.createObjectURL(blob),
-    mode: response.headers.get('X-Watermark-Mode') || '',
-    maskedPixels: Number(response.headers.get('X-Masked-Pixels')) || 0,
-  }
 }
 
 async function parseImageResponse(response: Response) {
