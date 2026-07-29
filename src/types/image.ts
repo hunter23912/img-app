@@ -9,6 +9,13 @@ export interface SizeOption {
   label: string
 }
 
+export interface ModelOption {
+  value: string
+  label: string
+  supportsN?: boolean
+  maxSize?: '1K' | '2K' | '4K'
+}
+
 export interface HealthResponse {
   ok?: boolean
   configured?: boolean

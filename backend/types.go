@@ -10,6 +10,7 @@ type generateRequest struct {
 	Prompt  string `json:"prompt"`
 	Size    string `json:"size"`
 	Quality string `json:"quality"`
+	N       int    `json:"n"`
 }
 
 type relayGenerateRequest struct {

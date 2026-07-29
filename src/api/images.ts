@@ -1,4 +1,4 @@
-import { imageModel } from '../constants/image'
+import { defaultModel } from '../constants/image'
 import type { HealthResponse, ImageResponse } from '../types/image'
 
 export async function fetchHealth() {
@@ -6,17 +6,18 @@ export async function fetchHealth() {
   return (await response.json()) as HealthResponse
 }
 
-export async function generateImage(prompt: string, size: string) {
+export async function generateImage(prompt: string, size: string, model = defaultModel, n = 1) {
   const response = await fetch('/api/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: imageModel,
+      model,
       prompt,
       size,
       quality: 'auto',
+      n,
     }),
   })
 
@@ -27,9 +28,10 @@ export async function editImage(input: {
   prompt: string
   size: string
   image: File
+  model?: string
 }) {
   const formData = new FormData()
-  formData.append('model', imageModel)
+  formData.append('model', input.model ?? defaultModel)
   formData.append('prompt', input.prompt)
   formData.append('quality', 'auto')
   formData.append('image', input.image)

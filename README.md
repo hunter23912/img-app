@@ -44,7 +44,7 @@ go mod init img-app/backend
 - 输入文生图 prompt。
 - 上传一张原图用于图编辑。
 - 文生图可选择输出尺寸。
-- 图编辑默认保持原图尺寸，也可以手动选择输出尺寸。
+- 图编辑默认原图尺寸，也可以手动选择输出尺寸。
 - 调用 `gpt-image-2` 生成图片。
 - 在页面展示生成结果。
 - 支持保存或下载结果图。
@@ -74,7 +74,7 @@ React 页面 -> Go 后端 API -> 中转站 gpt-image-2 接口
 
 ```txt
 IMG_API_KEY      必填，中转站 API key
-IMG_ENDPOINT     可选，默认 https://img-cn.65535.space
+IMG_ENDPOINT     可选，默认 https://task-api-1-cn.65535.space
 ```
 
 前端不展示、不提交 API key。
@@ -130,7 +130,7 @@ POST /api/edit
 当前按中转站 OpenAI 兼容接口实现。页面里 endpoint 默认是：
 
 ```txt
-https://img-cn.65535.space
+https://task-api-1-cn.65535.space
 ```
 
 后端会自动拼接成：
@@ -143,7 +143,7 @@ POST {endpoint}/v1/images/edits
 如果你想直接输入完整地址，也可以填：
 
 ```txt
-https://img-cn.65535.space/v1/images/generations
+https://task-api-1-cn.65535.space/v1/images/generations
 ```
 
 中转站同步等待模式最多可能阻塞 5 分钟，Go 后端 HTTP client 当前设置了 330 秒超时。
@@ -181,7 +181,7 @@ server: {
 这样前端可以直接请求：
 
 ```ts
-fetch('/api/health')
+fetch("/api/health");
 ```
 
 不用关心后端实际端口。
@@ -227,7 +227,7 @@ React 页面先分成几个区域：
 
 ```env
 IMG_API_KEY=你的中转站 API key
-IMG_ENDPOINT=https://img-cn.65535.space
+IMG_ENDPOINT=https://task-api-1-cn.65535.space
 ```
 
 然后启动后端：

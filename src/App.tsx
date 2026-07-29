@@ -5,7 +5,7 @@ import { editImage, generateImage } from './api/images'
 import { ImageFormPanel } from './components/ImageFormPanel'
 import { ResultPanel } from './components/ResultPanel'
 import { StatusCard } from './components/StatusCard'
-import { keepOriginalSize, sizeOptions } from './constants/image'
+import { defaultModel, keepOriginalSize, modelOptions, sizeOptions } from './constants/image'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useImageShare } from './hooks/useImageShare'
 import { useSourceImagePreview } from './hooks/useSourceImagePreview'
@@ -14,15 +14,25 @@ import type { ImageMode } from './types/image'
 function App() {
   const [mode, setMode] = useState<ImageMode>('generate')
   const [prompt, setPrompt] = useState('')
+  const [model, setModel] = useState(defaultModel)
+  const [imageCount, setImageCount] = useState(1)
   const [generateSize, setGenerateSize] = useState(sizeOptions[0].value)
   const [editSize, setEditSize] = useState(sizeOptions[0].value)
   const [resultImage, setResultImage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [message, setMessage] = useState('后端启动后会从环境变量读取中转站配置。')
+  const [message, setMessage] = useState('')
 
   const { healthLabel, healthClass, isConfigured } = useBackendHealth()
   const { sourceImage, sourcePreview, sourceSize, selectSourceImage } = useSourceImagePreview()
   const { isSharing, shareImage } = useImageShare(setMessage)
+
+  function handleModelChange(m: string) {
+    setModel(m)
+    const currentOpt = modelOptions.find(o => o.value === m)
+    if (currentOpt?.supportsN && imageCount < 1) {
+      setImageCount(1)
+    }
+  }
 
   function handleImageChange(file: File | null) {
     selectSourceImage(file)
@@ -54,7 +64,7 @@ function App() {
     try {
       const image =
         mode === 'generate'
-          ? await generateImage(prompt, generateSize)
+          ? await generateImage(prompt, generateSize, model, imageCount)
           : await submitEditRequest()
 
       setResultImage(image)
@@ -72,7 +82,7 @@ function App() {
     }
 
     const size = editSize === keepOriginalSize ? sourceSize : editSize
-    return editImage({ prompt, size, image: sourceImage })
+    return editImage({ prompt, size, image: sourceImage, model })
   }
 
   async function handleShareImage() {
@@ -101,6 +111,8 @@ function App() {
         <ImageFormPanel
           mode={mode}
           prompt={prompt}
+          model={model}
+          imageCount={imageCount}
           generateSize={generateSize}
           editSize={editSize}
           sourcePreview={sourcePreview}
@@ -108,6 +120,8 @@ function App() {
           isSubmitting={isSubmitting}
           onModeChange={setMode}
           onPromptChange={setPrompt}
+          onModelChange={handleModelChange}
+          onImageCountChange={setImageCount}
           onGenerateSizeChange={setGenerateSize}
           onEditSizeChange={setEditSize}
           onSourceImageChange={handleImageChange}

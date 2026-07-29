@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultEndpoint = "https://img-cn.65535.space"
+	defaultEndpoint = "https://task-api-1-cn.65535.space"
 	defaultModel    = "gpt-image-2"
 )
 

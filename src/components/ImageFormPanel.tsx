@@ -1,27 +1,37 @@
-import type { FormEvent } from 'react'
+import type { FormEvent } from "react";
 
-import { keepOriginalSize, sizeOptions } from '../constants/image'
-import type { ImageMode } from '../types/image'
+import {
+  getAvailableSizes,
+  keepOriginalSize,
+  modelOptions,
+} from "../constants/image";
+import type { ImageMode } from "../types/image";
 
 interface ImageFormPanelProps {
-  mode: ImageMode
-  prompt: string
-  generateSize: string
-  editSize: string
-  sourcePreview: string
-  sourceSize: string
-  isSubmitting: boolean
-  onModeChange: (mode: ImageMode) => void
-  onPromptChange: (prompt: string) => void
-  onGenerateSizeChange: (size: string) => void
-  onEditSizeChange: (size: string) => void
-  onSourceImageChange: (file: File | null) => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  mode: ImageMode;
+  prompt: string;
+  model: string;
+  imageCount: number;
+  generateSize: string;
+  editSize: string;
+  sourcePreview: string;
+  sourceSize: string;
+  isSubmitting: boolean;
+  onModeChange: (mode: ImageMode) => void;
+  onPromptChange: (prompt: string) => void;
+  onModelChange: (model: string) => void;
+  onImageCountChange: (count: number) => void;
+  onGenerateSizeChange: (size: string) => void;
+  onEditSizeChange: (size: string) => void;
+  onSourceImageChange: (file: File | null) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
 export function ImageFormPanel({
   mode,
   prompt,
+  model,
+  imageCount,
   generateSize,
   editSize,
   sourcePreview,
@@ -29,11 +39,16 @@ export function ImageFormPanel({
   isSubmitting,
   onModeChange,
   onPromptChange,
+  onModelChange,
+  onImageCountChange,
   onGenerateSizeChange,
   onEditSizeChange,
   onSourceImageChange,
   onSubmit,
 }: ImageFormPanelProps) {
+  const currentModel = modelOptions.find((m) => m.value === model);
+  const availableSizes = getAvailableSizes(model);
+
   return (
     <section className="card rounded-[1.4rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur">
       <form className="card-body gap-4 p-5" onSubmit={onSubmit}>
@@ -45,22 +60,22 @@ export function ImageFormPanel({
           <button
             type="button"
             className={`h-11 rounded-xl text-sm font-black transition ${
-              mode === 'generate'
-                ? 'bg-white text-slate-950 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
+              mode === "generate"
+                ? "bg-white text-slate-950 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
             }`}
-            onClick={() => onModeChange('generate')}
+            onClick={() => onModeChange("generate")}
           >
             文生图
           </button>
           <button
             type="button"
             className={`h-11 rounded-xl text-sm font-black transition ${
-              mode === 'edit'
-                ? 'bg-white text-slate-950 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
+              mode === "edit"
+                ? "bg-white text-slate-950 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
             }`}
-            onClick={() => onModeChange('edit')}
+            onClick={() => onModeChange("edit")}
           >
             图编辑
           </button>
@@ -78,22 +93,57 @@ export function ImageFormPanel({
         </label>
 
         <label className="form-control grid gap-2">
+          <span className="label-text font-bold text-slate-800">模型</span>
+          <select
+            className="select select-bordered h-12 w-full rounded-2xl border-slate-200 bg-white/80 shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200"
+            value={model}
+            onChange={(event) => onModelChange(event.target.value)}
+          >
+            {modelOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {currentModel?.supportsN && (
+          <label className="form-control grid gap-2">
+            <span className="label-text font-bold text-slate-800">
+              出图数量
+            </span>
+            <input
+              type="number"
+              className="input input-bordered h-12 w-full rounded-2xl border-slate-200 bg-white/80 shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200"
+              value={imageCount}
+              min={1}
+              max={4}
+              onChange={(event) =>
+                onImageCountChange(
+                  Math.max(1, Math.min(4, parseInt(event.target.value) || 1)),
+                )
+              }
+            />
+          </label>
+        )}
+
+        <label className="form-control grid gap-2">
           <span className="label-text font-bold text-slate-800">尺寸</span>
           <select
             className="select select-bordered h-12 w-full rounded-2xl border-slate-200 bg-white/80 shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200"
-            value={mode === 'generate' ? generateSize : editSize}
+            value={mode === "generate" ? generateSize : editSize}
             onChange={(event) =>
-              mode === 'generate'
+              mode === "generate"
                 ? onGenerateSizeChange(event.target.value)
                 : onEditSizeChange(event.target.value)
             }
           >
-            {mode === 'edit' && (
+            {mode === "edit" && (
               <option value={keepOriginalSize}>
-                {sourceSize ? `保持原图尺寸（${sourceSize}，可能更贵）` : '保持原图尺寸（可能更贵）'}
+                {sourceSize ? `原图尺寸（${sourceSize}）` : "原图尺寸"}
               </option>
             )}
-            {sizeOptions.map((option) => (
+            {availableSizes.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -101,24 +151,41 @@ export function ImageFormPanel({
           </select>
         </label>
 
-        {mode === 'edit' && (
+        {mode === "edit" && (
           <div className="grid gap-2">
             <span className="label-text font-bold text-slate-800">原图</span>
-            <label className="flex min-h-48 cursor-pointer items-center justify-center overflow-hidden rounded-3xl border border-dashed border-sky-300/70 bg-sky-50/60 text-sm font-bold text-sky-700/70 transition hover:bg-sky-50">
+            <label className="flex cursor-pointer items-center justify-center overflow-hidden rounded-3xl border border-dashed border-sky-300/70 bg-sky-50/60 text-sm font-bold text-sky-700/70 transition hover:bg-sky-50">
               <input
                 accept="image/*"
                 className="hidden"
                 type="file"
-                onChange={(event) => onSourceImageChange(event.target.files?.[0] ?? null)}
+                onChange={(event) =>
+                  onSourceImageChange(event.target.files?.[0] ?? null)
+                }
               />
               {sourcePreview ? (
                 <img
-                  className="h-full max-h-72 w-full object-contain"
+                  className="h-auto w-full"
                   src={sourcePreview}
                   alt="待编辑原图预览"
                 />
               ) : (
-                <span>上传待编辑图片</span>
+                <div className="flex min-h-16 items-center justify-center gap-2 px-4 py-3">
+                  <svg
+                    className="h-5 w-5 shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  <span>上传待编辑图片</span>
+                </div>
               )}
             </label>
             {sourceSize && (
@@ -139,13 +206,13 @@ export function ImageFormPanel({
               <span className="loading loading-spinner loading-sm" />
               生成中...
             </>
-          ) : mode === 'generate' ? (
-            '生成图片'
+          ) : mode === "generate" ? (
+            "生成图片"
           ) : (
-            '准备编辑'
+            "准备编辑"
           )}
         </button>
       </form>
     </section>
-  )
+  );
 }

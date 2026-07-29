@@ -11,24 +11,26 @@ export function ResultPanel({ image, message, isSharing, onShare }: ResultPanelP
       <div className="card-body gap-4 p-5">
         <div>
           <h2 className="card-title text-xl font-black text-slate-950">结果</h2>
-          <div className="mt-3 rounded-2xl border border-sky-200/80 bg-sky-50/80 px-4 py-3 text-sm leading-relaxed text-sky-900">
-            <span>{message}</span>
-          </div>
+          {message && (
+            <div className="mt-3 rounded-2xl border border-sky-200/80 bg-sky-50/80 px-4 py-3 text-sm leading-relaxed text-sky-900">
+              <span>{message}</span>
+            </div>
+          )}
         </div>
 
         <div
-          className={`grid overflow-hidden rounded-[1.25rem] border border-white/80 bg-gradient-to-br from-slate-50 to-sky-50/70 shadow-inner shadow-slate-200/70 ${
-            image ? 'p-2' : 'min-h-64 place-items-center'
+          className={`overflow-hidden rounded-[1.25rem] border border-white/80 bg-gradient-to-br from-slate-50 to-sky-50/70 shadow-inner shadow-slate-200/70 ${
+            image ? 'p-2' : 'px-4 py-3'
           }`}
         >
           {image ? (
             <img
-              className="mx-auto h-auto max-h-[75svh] max-w-full rounded-2xl object-contain"
+              className="mx-auto h-auto max-w-full rounded-2xl"
               src={image}
               alt="生成结果"
             />
           ) : (
-            <div className="px-6 text-center text-sm font-semibold text-slate-400">
+            <div className="text-center text-sm font-semibold text-slate-400">
               生成后的图片会显示在这里
             </div>
           )}

@@ -44,13 +44,23 @@ func buildImagesURL(endpoint string, action string) (string, error) {
 	return parsed.String(), nil
 }
 
+func imageCount(n int) int {
+	if n < 1 {
+		return 1
+	}
+	if n > 10 {
+		return 10
+	}
+	return n
+}
+
 func callRelayGenerate(generateURL string, apiKey string, input generateRequest) (string, error) {
 	payload := relayGenerateRequest{
 		Model:          input.Model,
 		Prompt:         input.Prompt,
 		Size:           input.Size,
 		Quality:        input.Quality,
-		N:              1,
+		N:              imageCount(input.N),
 		ResponseFormat: "url",
 	}
 
