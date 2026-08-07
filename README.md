@@ -1,6 +1,6 @@
 # Img App
 
-一个极简的手机端网页应用：前端使用 React + Vite + TypeScript，后端使用 Go。Go 后端从环境变量读取中转站 endpoint 和 API key，通过后端代理调用 `gpt-image-2` 模型，实现文生图和图编辑。
+一个极简的手机端网页应用：前端使用 React + Vite + TypeScript，后端使用 Go。Go 后端从环境变量读取中转站 endpoint 和 API key，通过后端代理调用 `gpt-image-2-lite` 模型，实现文生图和图编辑。
 
 ## 当前项目状态
 
@@ -45,7 +45,7 @@ go mod init img-app/backend
 - 上传一张原图用于图编辑。
 - 文生图可选择输出尺寸。
 - 图编辑默认原图尺寸，也可以手动选择输出尺寸。
-- 调用 `gpt-image-2` 生成图片。
+- 默认调用 `gpt-image-2-lite` 生成图片，默认输出 9:16 的 2K 尺寸（`1152x2048`）。
 - 在页面展示生成结果。
 - 支持保存或下载结果图。
 
@@ -60,7 +60,7 @@ go mod init img-app/backend
 前端不要直接调用中转站，而是：
 
 ```txt
-React 页面 -> Go 后端 API -> 中转站 gpt-image-2 接口
+React 页面 -> Go 后端 API -> 中转站 gpt-image-2-lite 接口
 ```
 
 原因：
@@ -70,22 +70,24 @@ React 页面 -> Go 后端 API -> 中转站 gpt-image-2 接口
 - 可以避免把 API key 暴露给第三方脚本或浏览器网络插件。
 - 后续如果要增加鉴权、日志、限流、缓存，也更容易。
 
-当前这个项目由 Go 后端读取 `backend/.env`：
+当前这个项目由 Go 后端只读取进程环境变量：
 
 ```txt
 IMG_API_KEY      必填，中转站 API key
 IMG_ENDPOINT     可选，默认 https://task-api-1-cn.65535.space
 ```
 
+后端不会读取 `.env` 文件，也没有内置 API key。缺少 `IMG_API_KEY` 时不会启动。
 前端不展示、不提交 API key。
 
 ## 前后端接口设计
 
-先设计两个后端接口：
+先设计三个后端接口：
 
 ```txt
 POST /api/generate
 POST /api/edit
+POST /api/download/image
 ```
 
 ### `POST /api/generate`
@@ -96,9 +98,9 @@ POST /api/edit
 
 ```json
 {
-  "model": "gpt-image-2",
+  "model": "gpt-image-2-lite",
   "prompt": "一只白色猫坐在窗边，柔和自然光",
-  "size": "1024x1024",
+  "size": "1152x2048",
   "quality": "auto"
 }
 ```
@@ -126,6 +128,20 @@ POST /api/edit
 - 接收 multipart form-data。
 - 将图片和 prompt 转发给中转站图编辑接口。
 - 返回编辑后的图片结果。
+
+### `POST /api/download/image`
+
+用于下载生成结果。请求体为：
+
+```json
+{
+  "source": "当前图片 URL 或 data URL",
+  "format": "jpg",
+  "quality": 95
+}
+```
+
+`format` 支持 `png` 和 `jpg`。PNG 直接返回原始图片数据；JPG 在后端解码后按 `quality`（`1-100`，缺省为 `95`）编码，透明区域使用白色填充。外部图片 URL 仅允许 HTTPS，并且必须是当前 Go 后端刚从生成或编辑接口收到的图片 URL；`data:image/...` 可直接处理。
 
 当前按中转站 OpenAI 兼容接口实现。页面里 endpoint 默认是：
 
@@ -223,11 +239,11 @@ React 页面先分成几个区域：
 
 开发阶段：
 
-先创建 `backend/.env`：
+在启动 Go 后端的同一个 PowerShell 终端中设置环境变量：
 
-```env
-IMG_API_KEY=你的中转站 API key
-IMG_ENDPOINT=https://task-api-1-cn.65535.space
+```powershell
+$env:IMG_API_KEY = "你的中转站 API key"
+$env:IMG_ENDPOINT = "https://task-api-1-cn.65535.space"
 ```
 
 然后启动后端：

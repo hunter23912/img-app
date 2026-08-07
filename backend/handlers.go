@@ -11,6 +11,9 @@ func normalizeImageRequest(input *generateRequest) {
 	if input.Model == "" {
 		input.Model = defaultModel
 	}
+	if input.Size == "" {
+		input.Size = defaultSize
+	}
 	if input.Quality == "" {
 		input.Quality = "auto"
 	}

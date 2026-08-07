@@ -10,7 +10,6 @@ type generateRequest struct {
 	Prompt  string `json:"prompt"`
 	Size    string `json:"size"`
 	Quality string `json:"quality"`
-	N       int    `json:"n"`
 }
 
 type relayGenerateRequest struct {
@@ -18,7 +17,6 @@ type relayGenerateRequest struct {
 	Prompt         string `json:"prompt"`
 	Size           string `json:"size,omitempty"`
 	Quality        string `json:"quality,omitempty"`
-	N              int    `json:"n"`
 	ResponseFormat string `json:"response_format,omitempty"`
 }
 
@@ -42,6 +40,12 @@ type asyncJobResponse struct {
 
 type imageResponse struct {
 	Image string `json:"image"`
+}
+
+type downloadImageRequest struct {
+	Source  string `json:"source"`
+	Format  string `json:"format"`
+	Quality *int   `json:"quality"`
 }
 
 type errorResponse struct {

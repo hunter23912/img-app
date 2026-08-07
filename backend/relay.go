@@ -2,11 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -44,23 +45,12 @@ func buildImagesURL(endpoint string, action string) (string, error) {
 	return parsed.String(), nil
 }
 
-func imageCount(n int) int {
-	if n < 1 {
-		return 1
-	}
-	if n > 10 {
-		return 10
-	}
-	return n
-}
-
 func callRelayGenerate(generateURL string, apiKey string, input generateRequest) (string, error) {
 	payload := relayGenerateRequest{
 		Model:          input.Model,
 		Prompt:         input.Prompt,
 		Size:           input.Size,
 		Quality:        input.Quality,
-		N:              imageCount(input.N),
 		ResponseFormat: "url",
 	}
 
@@ -79,10 +69,10 @@ func callRelayGenerate(generateURL string, apiKey string, input generateRequest)
 
 	client := &http.Client{Timeout: 330 * time.Second}
 	start := time.Now()
-	log.Printf("relay generate call: url=%s model=%q size=%q quality=%q", generateURL, input.Model, input.Size, input.Quality)
+	slog.Info("relay generate call", "url", generateURL, "model", input.Model, "size", input.Size, "quality", input.Quality)
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("relay generate network error: duration_ms=%d error=%v", time.Since(start).Milliseconds(), err)
+		slog.Error("relay generate network error", "duration_ms", time.Since(start).Milliseconds(), "error", err)
 		return "", fmt.Errorf("call relay: %w", err)
 	}
 	defer resp.Body.Close()
@@ -92,12 +82,11 @@ func callRelayGenerate(generateURL string, apiKey string, input generateRequest)
 	if err != nil {
 		return "", fmt.Errorf("read relay response: %w", err)
 	}
-	log.Printf(
-		"relay generate response: status=%d duration_ms=%d content_type=%q bytes=%d",
-		resp.StatusCode,
-		time.Since(start).Milliseconds(),
-		resp.Header.Get("Content-Type"),
-		len(respBody),
+	slog.Log(context.Background(), relayResponseLevel(resp.StatusCode), "relay generate response",
+		"status", resp.StatusCode,
+		"duration_ms", time.Since(start).Milliseconds(),
+		"content_type", resp.Header.Get("Content-Type"),
+		"bytes", len(respBody),
 	)
 
 	var relayResp relayImageResponse
@@ -173,10 +162,10 @@ func callRelayEdit(
 
 	client := &http.Client{Timeout: 330 * time.Second}
 	start := time.Now()
-	log.Printf("relay edit call: url=%s model=%q size=%q quality=%q image=%q mask=%t", editURL, input.Model, input.Size, input.Quality, imageHeader.Filename, maskFile != nil)
+	slog.Info("relay edit call", "url", editURL, "model", input.Model, "size", input.Size, "quality", input.Quality, "image", imageHeader.Filename, "has_mask", maskFile != nil)
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("relay edit network error: duration_ms=%d error=%v", time.Since(start).Milliseconds(), err)
+		slog.Error("relay edit network error", "duration_ms", time.Since(start).Milliseconds(), "error", err)
 		return "", fmt.Errorf("call relay edit: %w", err)
 	}
 	defer resp.Body.Close()
@@ -186,12 +175,11 @@ func callRelayEdit(
 	if err != nil {
 		return "", fmt.Errorf("read relay edit response: %w", err)
 	}
-	log.Printf(
-		"relay edit response: status=%d duration_ms=%d content_type=%q bytes=%d",
-		resp.StatusCode,
-		time.Since(start).Milliseconds(),
-		resp.Header.Get("Content-Type"),
-		len(respBody),
+	slog.Log(context.Background(), relayResponseLevel(resp.StatusCode), "relay edit response",
+		"status", resp.StatusCode,
+		"duration_ms", time.Since(start).Milliseconds(),
+		"content_type", resp.Header.Get("Content-Type"),
+		"bytes", len(respBody),
 	)
 
 	var relayResp relayImageResponse
@@ -204,6 +192,16 @@ func callRelayEdit(
 	}
 
 	return firstImage(relayResp)
+}
+
+func relayResponseLevel(statusCode int) slog.Level {
+	if statusCode >= http.StatusInternalServerError {
+		return slog.LevelError
+	}
+	if statusCode >= http.StatusBadRequest {
+		return slog.LevelWarn
+	}
+	return slog.LevelInfo
 }
 
 func copyMultipartFile(writer *multipart.Writer, field string, filename string, file multipart.File) error {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { fetchHealth } from '../api/images'
 import type { HealthState } from '../types/image'
@@ -33,22 +33,8 @@ export function useBackendHealth() {
     }
   }, [])
 
-  const healthLabel = useMemo(() => {
-    if (health === 'checking') return '检测中'
-    if (health === 'online') return '后端在线'
-    return '后端未连接'
-  }, [health])
-
-  const healthClass = useMemo(() => {
-    if (health === 'checking') return 'badge-warning'
-    if (health === 'online') return 'badge-success'
-    return 'badge-error'
-  }, [health])
-
   return {
     health,
-    healthLabel,
-    healthClass,
     isConfigured,
   }
 }

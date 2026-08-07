@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -48,25 +48,22 @@ func generateHandler(config appConfig) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "prompt is required"})
 			return
 		}
-		if input.Size == "" {
-			input.Size = "1024x1024"
-		}
-
 		generateURL, err := buildImagesURL(config.Endpoint, "generations")
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 			return
 		}
 
-		log.Printf("image generate request: model=%q size=%q quality=%q prompt_chars=%d", input.Model, input.Size, input.Quality, len(input.Prompt))
+		slog.Info("image generate requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt))
 		image, err := callRelayGenerate(generateURL, config.APIKey, input)
 		if err != nil {
-			log.Printf("image generate failed: %v", err)
+			slog.Error("image generate failed", "error", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
 			return
 		}
+		config.ImageSourceRegistry.Trust(image)
 
-		log.Printf("image generate succeeded: model=%q size=%q", input.Model, input.Size)
+		slog.Info("image generate succeeded", "model", input.Model, "size", input.Size)
 		writeJSON(w, http.StatusOK, imageResponse{Image: image})
 	}
 }
@@ -121,15 +118,16 @@ func editHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("image edit request: model=%q size=%q quality=%q prompt_chars=%d image=%q mask=%t", input.Model, input.Size, input.Quality, len(input.Prompt), imageHeader.Filename, maskFile != nil)
+		slog.Info("image edit requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt), "image", imageHeader.Filename, "has_mask", maskFile != nil)
 		image, err := callRelayEdit(editURL, config.APIKey, input, imageFile, imageHeader, maskFile, maskHeader)
 		if err != nil {
-			log.Printf("image edit failed: %v", err)
+			slog.Error("image edit failed", "error", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
 			return
 		}
+		config.ImageSourceRegistry.Trust(image)
 
-		log.Printf("image edit succeeded: model=%q size=%q", input.Model, input.Size)
+		slog.Info("image edit succeeded", "model", input.Model, "size", input.Size)
 		writeJSON(w, http.StatusOK, imageResponse{Image: image})
 	}
 }

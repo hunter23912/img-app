@@ -1,25 +1,39 @@
 import { defaultModel } from '../constants/image'
-import type { HealthResponse, ImageResponse } from '../types/image'
+import type { DownloadFormat, HealthResponse, ImageResponse } from '../types/image'
+
+const healthTimeoutMs = 5_000
+const imageRequestTimeoutMs = 345_000
+const downloadTimeoutMs = 45_000
 
 export async function fetchHealth() {
-  const response = await fetch('/api/health')
-  return (await response.json()) as HealthResponse
+  const response = await fetchWithTimeout('/api/health', undefined, healthTimeoutMs, '后端连接超时。')
+  if (!response.ok) throw new Error('后端状态异常。')
+
+  try {
+    return (await response.json()) as HealthResponse
+  } catch {
+    throw new Error('后端状态响应无效。')
+  }
 }
 
-export async function generateImage(prompt: string, size: string, model = defaultModel, n = 1) {
-  const response = await fetch('/api/generate', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+export async function generateImage(prompt: string, size: string, model = defaultModel) {
+  const response = await fetchWithTimeout(
+    '/api/generate',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        size,
+        quality: 'auto',
+      }),
     },
-    body: JSON.stringify({
-      model,
-      prompt,
-      size,
-      quality: 'auto',
-      n,
-    }),
-  })
+    imageRequestTimeoutMs,
+    '图片生成超时，请稍后重试。',
+  )
 
   return parseImageResponse(response)
 }
@@ -40,19 +54,57 @@ export async function editImage(input: {
     formData.append('size', input.size)
   }
 
-  const response = await fetch('/api/edit', {
-    method: 'POST',
-    body: formData,
-  })
+  const response = await fetchWithTimeout(
+    '/api/edit',
+    {
+      method: 'POST',
+      body: formData,
+    },
+    imageRequestTimeoutMs,
+    '图片编辑超时，请稍后重试。',
+  )
 
   return parseImageResponse(response)
 }
 
-async function parseImageResponse(response: Response) {
-  const data = (await response.json()) as ImageResponse
+export async function downloadImage(input: {
+  source: string
+  format: DownloadFormat
+  quality: number
+}) {
+  const response = await fetchWithTimeout(
+    '/api/download/image',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
+    downloadTimeoutMs,
+    '图片处理超时，请稍后重试。',
+  )
 
   if (!response.ok) {
-    throw new Error(data.error || `请求失败：${response.status}`)
+    throw new Error(await parseErrorResponse(response, '图片下载失败'))
+  }
+
+  return {
+    response,
+    filename: getDownloadFilename(response.headers.get('Content-Disposition'), input.format),
+  }
+}
+
+async function parseImageResponse(response: Response) {
+  let data: ImageResponse
+  try {
+    data = (await response.json()) as ImageResponse
+  } catch {
+    throw new Error(messageForStatus(response.status, '', '图片服务返回异常，请稍后重试。'))
+  }
+
+  if (!response.ok) {
+    throw new Error(messageForStatus(response.status, data.error, '图片生成失败，请稍后重试。'))
   }
 
   if (!data.image) {
@@ -60,4 +112,104 @@ async function parseImageResponse(response: Response) {
   }
 
   return data.image
+}
+
+async function parseErrorResponse(response: Response, fallback: string) {
+  const contentType = response.headers.get('Content-Type') ?? ''
+  if (contentType.includes('application/json')) {
+    try {
+      const data = (await response.json()) as { error?: string }
+      return messageForStatus(response.status, data.error, fallback)
+    } catch {
+      // Fall through to the status-based message when the error body is malformed.
+    }
+  }
+
+  return messageForStatus(response.status, '', fallback)
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+  timeoutMessage: string,
+) {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(timeoutMessage, { cause: error })
+    }
+
+    if (error instanceof TypeError) {
+      throw new Error('无法连接服务器，请检查网络或后端服务。', { cause: error })
+    }
+
+    throw new Error('请求未能完成，请稍后重试。', { cause: error })
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+function messageForStatus(status: number, rawMessage: string | undefined, fallback: string) {
+  const detail = rawMessage?.trim() ?? ''
+  const message = detail.toLowerCase()
+
+  if (message.includes('img_api_key') || message.includes('api key')) {
+    return '图片服务尚未正确配置。'
+  }
+  if (message.includes('rate limit') || message.includes('concurrent') || status === 429) {
+    return '请求过于频繁，请稍后重试。'
+  }
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('sync wait') || status === 504) {
+    return '图片生成超时，请稍后重试。'
+  }
+  if (message.includes('permission') || message.includes('forbidden') || status === 401 || status === 403) {
+    return '图片服务拒绝了请求，请检查 API 权限。'
+  }
+  if (message.includes('service unavailable') || message.includes('queue') || status === 503) {
+    return '图片服务繁忙，请稍后重试。'
+  }
+  if (message.includes('call relay') || message.includes('network error')) {
+    return '暂时无法连接图片服务，请稍后重试。'
+  }
+  if (message.includes('no image') || message.includes('image data')) {
+    return '图片服务未返回有效图片，请重试。'
+  }
+  if (message.includes('source url was not generated')) {
+    return '图片来源已失效，请重新生成后下载。'
+  }
+  if (message.includes('too large')) {
+    return '图片过大，暂时无法处理。'
+  }
+  if (message.includes('format') || message.includes('quality')) {
+    return '下载参数无效，请调整后重试。'
+  }
+
+  // 后端可能返回审核拒绝、内容限制等无法穷举的具体原因。
+  // 已知的技术错误在上面统一处理，其余后端消息应保留给用户，避免被状态码覆盖。
+  if (detail) return detail
+
+  if (status === 400) return '请求内容有误，请检查后重试。'
+  if (status === 404) return '请求的服务不存在。'
+  if (status >= 500) return '图片服务暂时不可用，请稍后重试。'
+
+  return fallback
+}
+
+function getDownloadFilename(contentDisposition: string | null, format: DownloadFormat) {
+  const fallback = `gpt-image.${format}`
+  if (!contentDisposition) return fallback
+
+  const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+  if (!match?.[1]) return fallback
+
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return match[1]
+  }
 }

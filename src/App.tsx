@@ -1,38 +1,47 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 
-import { editImage, generateImage } from './api/images'
+import { downloadImage, editImage, generateImage } from './api/images'
 import { ImageFormPanel } from './components/ImageFormPanel'
 import { ResultPanel } from './components/ResultPanel'
 import { StatusCard } from './components/StatusCard'
-import { defaultModel, keepOriginalSize, modelOptions, sizeOptions } from './constants/image'
+import { defaultModel, defaultSize, keepOriginalSize } from './constants/image'
 import { useBackendHealth } from './hooks/useBackendHealth'
-import { useImageShare } from './hooks/useImageShare'
 import { useSourceImagePreview } from './hooks/useSourceImagePreview'
-import type { ImageMode } from './types/image'
+import type { DownloadFormat, DownloadStage, ImageMode, MessageTone } from './types/image'
 
 function App() {
   const [mode, setMode] = useState<ImageMode>('generate')
   const [prompt, setPrompt] = useState('')
   const [model, setModel] = useState(defaultModel)
-  const [imageCount, setImageCount] = useState(1)
-  const [generateSize, setGenerateSize] = useState(sizeOptions[0].value)
-  const [editSize, setEditSize] = useState(sizeOptions[0].value)
+  const [generateSize, setGenerateSize] = useState(defaultSize)
+  const [editSize, setEditSize] = useState(defaultSize)
   const [resultImage, setResultImage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>('jpg')
+  const [downloadQuality, setDownloadQuality] = useState(95)
+  const [downloadStage, setDownloadStage] = useState<DownloadStage>('idle')
   const [message, setMessage] = useState('')
+  const [messageTone, setMessageTone] = useState<MessageTone>('info')
+  const resultPanelRef = useRef<HTMLDivElement>(null)
 
-  const { healthLabel, healthClass, isConfigured } = useBackendHealth()
+  const isDownloading = downloadStage !== 'idle'
+
+  const { health, isConfigured } = useBackendHealth()
   const { sourceImage, sourcePreview, sourceSize, selectSourceImage } = useSourceImagePreview()
-  const { isSharing, shareImage } = useImageShare(setMessage)
 
-  function handleModelChange(m: string) {
-    setModel(m)
-    const currentOpt = modelOptions.find(o => o.value === m)
-    if (currentOpt?.supportsN && imageCount < 1) {
-      setImageCount(1)
+  useEffect(() => {
+    if (!message || messageTone !== 'error') return
+
+    const panel = resultPanelRef.current
+    if (!panel) return
+
+    const bounds = panel.getBoundingClientRect()
+    if (bounds.top < 0 || bounds.top > window.innerHeight) {
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      panel.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' })
     }
-  }
+  }, [message, messageTone])
 
   function handleImageChange(file: File | null) {
     selectSourceImage(file)
@@ -44,33 +53,39 @@ function App() {
 
     if (!isConfigured) {
       setMessage('后端还没有配置 IMG_API_KEY，请先设置环境变量并重启 Go 服务。')
+      setMessageTone('error')
       return
     }
 
     if (!prompt.trim()) {
       setMessage('请先填写 prompt。')
+      setMessageTone('error')
       return
     }
 
     if (mode === 'edit' && !sourceImage) {
       setMessage('图编辑模式需要先上传一张原图。')
+      setMessageTone('error')
       return
     }
 
     setIsSubmitting(true)
     setResultImage('')
     setMessage(mode === 'generate' ? '正在请求中转站生成图片...' : '正在请求中转站编辑图片...')
+    setMessageTone('info')
 
     try {
-      const image =
+        const image =
         mode === 'generate'
-          ? await generateImage(prompt, generateSize, model, imageCount)
+          ? await generateImage(prompt, generateSize, model)
           : await submitEditRequest()
 
       setResultImage(image)
       setMessage(mode === 'generate' ? '图片生成完成。' : '图片编辑完成。')
+      setMessageTone('success')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '图片生成失败。')
+      setMessageTone('error')
     } finally {
       setIsSubmitting(false)
     }
@@ -85,55 +100,81 @@ function App() {
     return editImage({ prompt, size, image: sourceImage, model })
   }
 
-  async function handleShareImage() {
-    await shareImage(resultImage)
+  async function handleDownloadImage() {
+    if (!resultImage || isDownloading) return
+
+    setDownloadStage('processing')
+    setMessage('')
+
+    try {
+      const { response, filename } = await downloadImage({
+        source: resultImage,
+        format: downloadFormat,
+        quality: downloadQuality,
+      })
+      setDownloadStage('downloading')
+      const blob = await response.blob()
+      const objectURL = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectURL
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectURL), 1000)
+      setMessage('图片下载已开始。')
+      setMessageTone('success')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '图片下载失败。')
+      setMessageTone('error')
+    } finally {
+      setDownloadStage('idle')
+    }
   }
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-4 px-4 pb-5 pt-5 sm:px-5">
-      <header className="flex items-start justify-between gap-4 px-1 pt-1">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700/70">
-            Generate
-          </p>
-          <h1 className="mt-2 text-4xl font-black leading-none tracking-tight text-slate-950">
-            图片生成
-          </h1>
-        </div>
-        <span className={`badge badge-soft mt-1 shrink-0 rounded-full border-0 px-3 py-3 shadow-sm ${healthClass}`}>
-          {healthLabel}
-        </span>
+    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-2 px-3 pb-5 pt-3 sm:gap-3 sm:px-5 sm:pb-5 sm:pt-4">
+      <header className="flex items-center justify-between gap-2 px-1 sm:gap-3">
+        <h1 className="text-3xl font-black leading-tight tracking-tight text-slate-950">
+          像素工坊
+        </h1>
+        <StatusCard
+          isConfigured={isConfigured}
+          health={health}
+        />
       </header>
 
-      <div className="grid gap-3">
-        <StatusCard isConfigured={isConfigured} />
-
+      <div className="grid gap-3 sm:gap-4">
         <ImageFormPanel
           mode={mode}
           prompt={prompt}
           model={model}
-          imageCount={imageCount}
           generateSize={generateSize}
           editSize={editSize}
           sourcePreview={sourcePreview}
-          sourceSize={sourceSize}
           isSubmitting={isSubmitting}
           onModeChange={setMode}
           onPromptChange={setPrompt}
-          onModelChange={handleModelChange}
-          onImageCountChange={setImageCount}
+          onModelChange={setModel}
           onGenerateSizeChange={setGenerateSize}
           onEditSizeChange={setEditSize}
           onSourceImageChange={handleImageChange}
           onSubmit={handleSubmit}
         />
 
-        <ResultPanel
-          image={resultImage}
-          message={message}
-          isSharing={isSharing}
-          onShare={handleShareImage}
-        />
+        <div ref={resultPanelRef}>
+          <ResultPanel
+            image={resultImage}
+            message={message}
+            messageTone={messageTone}
+            format={downloadFormat}
+            quality={downloadQuality}
+            downloadStage={downloadStage}
+            onFormatChange={setDownloadFormat}
+            onQualityChange={setDownloadQuality}
+            onDownload={handleDownloadImage}
+          />
+        </div>
       </div>
     </main>
   )

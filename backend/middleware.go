@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -13,7 +13,7 @@ func withCORS(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Expose-Headers", "X-Image-Width, X-Image-Height")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Image-Width, X-Image-Height, Content-Disposition")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -57,15 +57,21 @@ func withRequestLog(next http.Handler) http.Handler {
 			statusCode = http.StatusOK
 		}
 
-		log.Printf(
-			"http request: method=%s path=%s status=%d bytes=%d duration_ms=%d client_ip=%s user_agent=%q",
-			r.Method,
-			r.URL.RequestURI(),
-			statusCode,
-			recorder.bytes,
-			time.Since(start).Milliseconds(),
-			clientIP(r),
-			r.UserAgent(),
+		level := slog.LevelInfo
+		if statusCode >= http.StatusInternalServerError {
+			level = slog.LevelError
+		} else if statusCode >= http.StatusBadRequest {
+			level = slog.LevelWarn
+		}
+
+		slog.Log(r.Context(), level, "http request",
+			"method", r.Method,
+			"path", r.URL.RequestURI(),
+			"status", statusCode,
+			"bytes", recorder.bytes,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"client_ip", clientIP(r),
+			"user_agent", r.UserAgent(),
 		)
 	})
 }
