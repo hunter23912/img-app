@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import type { DownloadFormat, DownloadStage, MessageTone } from '../types/image'
 
 interface ResultPanelProps {
@@ -7,9 +9,13 @@ interface ResultPanelProps {
   format: DownloadFormat
   quality: number
   downloadStage: DownloadStage
+  history: string[]
+  historySyncWarning: string
   onFormatChange: (format: DownloadFormat) => void
   onQualityChange: (quality: number) => void
   onDownload: () => void
+  onSelectHistory: (url: string) => void
+  onDeleteHistory: (url: string) => void
 }
 
 export function ResultPanel({
@@ -19,11 +25,28 @@ export function ResultPanel({
   format,
   quality,
   downloadStage,
+  history,
+  historySyncWarning,
   onFormatChange,
   onQualityChange,
   onDownload,
+  onSelectHistory,
+  onDeleteHistory,
 }: ResultPanelProps) {
+  const [failedHistoryUrls, setFailedHistoryUrls] = useState<string[]>([])
   const isDownloading = downloadStage !== 'idle'
+
+  function handleHistoryImageError(url: string) {
+    setFailedHistoryUrls((current) =>
+      current.includes(url) ? current : [...current, url],
+    )
+  }
+
+  function handleDeleteHistory(url: string) {
+    setFailedHistoryUrls((current) => current.filter((item) => item !== url))
+    onDeleteHistory(url)
+  }
+
   const downloadStatus =
     downloadStage === 'processing'
       ? format === 'jpg'
@@ -157,6 +180,89 @@ export function ResultPanel({
                   : '下载中...'
                 : '下载图片'}
             </button>
+          </div>
+        )}
+
+        {(history.length > 0 || historySyncWarning) && (
+          <div className="grid gap-3 border-t border-slate-200/80 pt-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-black text-slate-800">历史记录</h3>
+              <span className="text-xs font-bold tabular-nums text-slate-500">
+                {history.length}/5
+              </span>
+            </div>
+
+            {historySyncWarning && (
+              <p
+                className="text-sm font-semibold leading-relaxed text-amber-800 [overflow-wrap:anywhere]"
+                role="alert"
+              >
+                {historySyncWarning}
+              </p>
+            )}
+
+            {history.length > 0 && (
+              <div
+                className="grid grid-cols-5 gap-2"
+                aria-label="最近生成或编辑的图片"
+              >
+                {history.map((url, index) => {
+                  const isFailed = history.includes(url) && failedHistoryUrls.includes(url)
+                  const isCurrent = image === url
+
+                  return (
+                    <div key={url} className="relative min-w-0">
+                      {isFailed ? (
+                        <div
+                          className={`flex aspect-square items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-1.5 text-center text-[11px] font-bold leading-tight text-rose-700 ${
+                            isCurrent ? 'ring-2 ring-rose-400 ring-offset-2' : ''
+                          }`}
+                          role="status"
+                        >
+                          图片失效
+                        </div>
+                      ) : (
+                        <button
+                          className={`block aspect-square w-full overflow-hidden rounded-xl border bg-slate-100 transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
+                            isCurrent
+                              ? 'border-sky-500 ring-2 ring-sky-400 ring-offset-2'
+                              : 'border-slate-200/80'
+                          }`}
+                          type="button"
+                          aria-label={`恢复第 ${index + 1} 张历史图片`}
+                          aria-pressed={isCurrent}
+                          title="恢复这张历史图片"
+                          onClick={() => onSelectHistory(url)}
+                        >
+                          <img
+                            className="h-full w-full object-cover"
+                            src={url}
+                            alt={`历史图片 ${index + 1}`}
+                            onError={() => handleHistoryImageError(url)}
+                          />
+                        </button>
+                      )}
+                      <button
+                        className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-slate-950/75 text-white shadow-sm transition hover:bg-rose-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                        type="button"
+                        aria-label={`删除第 ${index + 1} 条历史记录`}
+                        title="删除这条历史记录"
+                        onClick={() => handleDeleteHistory(url)}
+                      >
+                        <svg
+                          className="h-3.5 w-3.5"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path d="M6.25 4.75a.75.75 0 0 1 .75-.75h6a.75.75 0 0 1 .75.75v.5h1a.75.75 0 0 1 0 1.5h-.25v8.5A1.75 1.75 0 0 1 12.75 17h-5.5A1.75 1.75 0 0 1 5.5 15.25v-8.5h-.25a.75.75 0 0 1 0-1.5h1v-.5Zm1.5.75v.25h4.5V5.5h-4.5Zm-.75 2.75v7a.25.25 0 0 0 .25.25h5.5a.25.25 0 0 0 .25-.25v-7H7Zm1.5 1.25a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3a.75.75 0 0 1 .75-.75Zm3 0a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3a.75.75 0 0 1 .75-.75Z" />
+                        </svg>
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

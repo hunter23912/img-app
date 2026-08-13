@@ -2,6 +2,7 @@ import { defaultModel } from '../constants/image'
 import type { DownloadFormat, HealthResponse, ImageResponse } from '../types/image'
 
 const healthTimeoutMs = 5_000
+const historyTimeoutMs = 10_000
 const imageRequestTimeoutMs = 345_000
 const downloadTimeoutMs = 45_000
 
@@ -67,6 +68,51 @@ export async function editImage(input: {
   return parseImageResponse(response)
 }
 
+export async function fetchImageHistory() {
+  const response = await fetchWithTimeout(
+    '/api/history',
+    undefined,
+    historyTimeoutMs,
+    '历史记录同步超时。',
+  )
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, '历史记录同步失败'))
+  }
+
+  let data: unknown
+  try {
+    data = await response.json()
+  } catch {
+    throw new Error('历史记录响应无效。')
+  }
+
+  if (!isImageHistoryResponse(data)) {
+    throw new Error('历史记录响应无效。')
+  }
+
+  return data.images
+}
+
+export async function deleteImageHistory(image: string) {
+  const response = await fetchWithTimeout(
+    '/api/history',
+    {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ image }),
+    },
+    historyTimeoutMs,
+    '历史记录删除超时。',
+  )
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, '历史记录删除失败'))
+  }
+}
+
 export async function downloadImage(input: {
   source: string
   format: DownloadFormat
@@ -126,6 +172,13 @@ async function parseErrorResponse(response: Response, fallback: string) {
   }
 
   return messageForStatus(response.status, '', fallback)
+}
+
+function isImageHistoryResponse(value: unknown): value is { images: string[] } {
+  if (!value || typeof value !== 'object' || !('images' in value)) return false
+
+  const images = value.images
+  return Array.isArray(images) && images.every((image) => typeof image === 'string')
 }
 
 async function fetchWithTimeout(

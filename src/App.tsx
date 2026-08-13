@@ -7,6 +7,7 @@ import { ResultPanel } from './components/ResultPanel'
 import { StatusCard } from './components/StatusCard'
 import { defaultModel, defaultSize, keepOriginalSize } from './constants/image'
 import { useBackendHealth } from './hooks/useBackendHealth'
+import { useImageHistory } from './hooks/useImageHistory'
 import { useSourceImagePreview } from './hooks/useSourceImagePreview'
 import type { DownloadFormat, DownloadStage, ImageMode, MessageTone } from './types/image'
 
@@ -28,6 +29,8 @@ function App() {
   const isDownloading = downloadStage !== 'idle'
 
   const { health, isConfigured } = useBackendHealth()
+  const { history, syncWarning: historySyncWarning, refreshHistory, removeImage } =
+    useImageHistory()
   const { sourceImage, sourcePreview, sourceSize, selectSourceImage } = useSourceImagePreview()
 
   useEffect(() => {
@@ -81,6 +84,7 @@ function App() {
           : await submitEditRequest()
 
       setResultImage(image)
+      void refreshHistory()
       setMessage(mode === 'generate' ? '图片生成完成。' : '图片编辑完成。')
       setMessageTone('success')
     } catch (error) {
@@ -132,6 +136,12 @@ function App() {
     }
   }
 
+  function handleSelectHistory(url: string) {
+    setResultImage(url)
+    setMessage('已恢复历史图片。')
+    setMessageTone('success')
+  }
+
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-2 px-3 pb-5 pt-3 sm:gap-3 sm:px-5 sm:pb-5 sm:pt-4">
       <header className="flex items-center justify-between gap-2 px-1 sm:gap-3">
@@ -170,9 +180,13 @@ function App() {
             format={downloadFormat}
             quality={downloadQuality}
             downloadStage={downloadStage}
+            history={history}
+            historySyncWarning={historySyncWarning}
             onFormatChange={setDownloadFormat}
             onQualityChange={setDownloadQuality}
             onDownload={handleDownloadImage}
+            onSelectHistory={handleSelectHistory}
+            onDeleteHistory={removeImage}
           />
         </div>
       </div>

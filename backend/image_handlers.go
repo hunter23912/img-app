@@ -62,6 +62,7 @@ func generateHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 		config.ImageSourceRegistry.Trust(image)
+		config.ImageHistory.Add(image)
 
 		slog.Info("image generate succeeded", "model", input.Model, "size", input.Size)
 		writeJSON(w, http.StatusOK, imageResponse{Image: image})
@@ -126,6 +127,7 @@ func editHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 		config.ImageSourceRegistry.Trust(image)
+		config.ImageHistory.Add(image)
 
 		slog.Info("image edit succeeded", "model", input.Model, "size", input.Size)
 		writeJSON(w, http.StatusOK, imageResponse{Image: image})

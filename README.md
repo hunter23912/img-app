@@ -10,6 +10,7 @@
 - 样式：Tailwind CSS + daisyUI。
 - 后端：Go module，位于 `backend/` 目录。
 - 已实现：`GET /api/health` 健康检查。
+- 已实现：`GET /api/history` 和 `DELETE /api/history` 进程内图片历史记录。
 - 已实现：`POST /api/generate` 文生图代理接口。
 - 已实现：`POST /api/edit` 图编辑代理接口。
 - 已实现：手机端基础页面和 Vite `/api` 代理。
@@ -49,7 +50,7 @@ go mod init img-app/backend
 - 在页面展示生成结果。
 - 支持保存或下载结果图。
 
-暂时不做用户系统、历史记录、计费、数据库、复杂图片管理。
+暂时不做用户系统、计费、数据库、复杂图片管理。
 
 图片压缩当前也走本地算法：前端上传图片和参数，Go 后端用标准库解码图片，再按原尺寸重编码为 JPG 或 PNG。JPG 使用质量参数控制体积，PNG 使用最高压缩等级重编码并剥离原始元数据。批量压缩会复用同一套压缩逻辑，把成功处理的图片和 `manifest.json` 明细打进 zip 返回。
 
@@ -82,13 +83,29 @@ IMG_ENDPOINT     可选，默认 https://task-api-1-cn.65535.space
 
 ## 前后端接口设计
 
-先设计三个后端接口：
+后端接口：
 
 ```txt
+GET /api/history
+DELETE /api/history
 POST /api/generate
 POST /api/edit
 POST /api/download/image
 ```
+
+### `GET /api/history` 和 `DELETE /api/history`
+
+历史记录由 Go 进程在内存中保存最近 5 个 HTTPS 图片 URL，所有访问同一个后端的设备共享这份列表。服务重启后历史记录清空，后端不会下载或保存图片文件。
+
+查询返回：
+
+```json
+{
+  "images": ["https://example.com/image.png"]
+}
+```
+
+删除时提交 `{"image":"https://example.com/image.png"}`，成功返回 `204 No Content`。
 
 ### `POST /api/generate`
 

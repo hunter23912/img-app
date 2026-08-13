@@ -17,6 +17,7 @@ type appConfig struct {
 	APIKey              string
 	Addr                string
 	ImageSourceRegistry *imageSourceRegistry
+	ImageHistory        *imageHistory
 }
 
 func loadConfig() (appConfig, error) {

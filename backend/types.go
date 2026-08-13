@@ -42,6 +42,14 @@ type imageResponse struct {
 	Image string `json:"image"`
 }
 
+type imageHistoryResponse struct {
+	Images []string `json:"images"`
+}
+
+type historyDeleteRequest struct {
+	Image string `json:"image"`
+}
+
 type downloadImageRequest struct {
 	Source  string `json:"source"`
 	Format  string `json:"format"`

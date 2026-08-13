@@ -15,9 +15,11 @@ func main() {
 		os.Exit(1)
 	}
 	config.ImageSourceRegistry = newImageSourceRegistry()
+	config.ImageHistory = newImageHistory()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler(config))
+	mux.HandleFunc("/api/history", historyHandler(config))
 	mux.HandleFunc("/api/generate", generateHandler(config))
 	mux.HandleFunc("/api/edit", editHandler(config))
 	mux.HandleFunc("/api/download/image", downloadImageHandler(config))
