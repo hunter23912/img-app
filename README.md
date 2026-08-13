@@ -10,7 +10,8 @@
 - 样式：Tailwind CSS + daisyUI。
 - 后端：Go module，位于 `backend/` 目录。
 - 已实现：`GET /api/health` 健康检查。
-- 已实现：`GET /api/history` 和 `DELETE /api/history` 进程内图片历史记录。
+- 已实现：SQLite 持久化的 `GET /api/history?limit=5&cursor=...` 和 `DELETE /api/history/{taskID}`。
+- 已实现：SQLite 持久化的共享提示词预设接口和首次启动种子迁移。
 - 已实现：`POST /api/generate` 文生图代理接口。
 - 已实现：`POST /api/edit` 图编辑代理接口。
 - 已实现：手机端基础页面和 Vite `/api` 代理。
@@ -76,10 +77,29 @@ React 页面 -> Go 后端 API -> 中转站 gpt-image-2-lite 接口
 ```txt
 IMG_API_KEY      必填，中转站 API key
 IMG_ENDPOINT     可选，默认 https://task-api-1-cn.65535.space
+APP_DB_PATH      可选，默认 data/img-app.db（相对于启动后端时的工作目录）
 ```
 
 后端不会读取 `.env` 文件，也没有内置 API key。缺少 `IMG_API_KEY` 时不会启动。
 前端不展示、不提交 API key。
+
+SQLite 数据库由后端使用纯 Go 的 `modernc.org/sqlite` 驱动自动创建和迁移。部署时请保留数据库文件；正式环境建议使用独立绝对路径，例如 `APP_DB_PATH=/var/lib/img-app/img-app.db`。
+
+### 后续部署
+
+可以运行：
+
+```bash
+./deploy.sh
+```
+
+但当前脚本只执行前端构建、后端交叉编译和 `scp` 上传，不负责登录服务器或重启远端进程。执行完成后，需要按照服务器上的进程管理方式重启后端，例如：
+
+```bash
+ssh server 'sudo systemctl restart img-app-backend'
+```
+
+如果使用 `supervisor`、`pm2`、Docker 或手工后台进程，请替换为对应的重启命令。请确认远端服务的工作目录、`IMG_API_KEY`、`IMG_ENDPOINT` 和 `APP_DB_PATH` 仍然存在；升级时只替换二进制和前端 `dist`，不要删除 SQLite 数据库文件。
 
 ## 前后端接口设计
 
@@ -95,17 +115,27 @@ POST /api/download/image
 
 ### `GET /api/history` 和 `DELETE /api/history`
 
-历史记录由 Go 进程在内存中保存最近 5 个 HTTPS 图片 URL，所有访问同一个后端的设备共享这份列表。服务重启后历史记录清空，后端不会下载或保存图片文件。
+历史记录由 SQLite 保存最近 50 条生成/编辑任务，所有访问同一个后端的设备共享这份列表。前端首屏请求 5 条，使用 `cursor` 继续分页。只会把 HTTPS 图片 URL 写入数据库，不会保存大型 base64 图片或图片文件。
 
 查询返回：
 
 ```json
 {
-  "images": ["https://example.com/image.png"]
+	"tasks": [{
+		"id": "task-id",
+		"mode": "generate",
+		"status": "succeeded",
+		"image": "https://example.com/image.png",
+		"error": ""
+	}],
+	"next_cursor": "...",
+	"has_more": false
 }
 ```
 
-删除时提交 `{"image":"https://example.com/image.png"}`，成功返回 `204 No Content`。
+删除时使用 `DELETE /api/history/{taskID}`，成功返回 `204 No Content`。
+
+提示词预设使用 `GET/POST /api/presets`、`PUT/DELETE /api/presets/{id}` 和 `POST /api/presets/import`。数据库首次创建时自动写入 7 条内置预设；浏览器旧版本 localStorage 中的自定义预设会尝试迁移一次。主题跟随系统，并在用户切换后保存在当前浏览器。
 
 ### `POST /api/generate`
 

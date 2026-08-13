@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { DownloadFormat, DownloadStage, MessageTone } from '../types/image'
+import type { DownloadFormat, DownloadStage, ImageTask, MessageTone } from '../types/image'
 
 interface ResultPanelProps {
   image: string
@@ -9,13 +9,16 @@ interface ResultPanelProps {
   format: DownloadFormat
   quality: number
   downloadStage: DownloadStage
-  history: string[]
+  history: ImageTask[]
+  hasMore: boolean
+  isLoadingMore: boolean
   historySyncWarning: string
   onFormatChange: (format: DownloadFormat) => void
   onQualityChange: (quality: number) => void
   onDownload: () => void
   onSelectHistory: (url: string) => void
-  onDeleteHistory: (url: string) => void
+  onDeleteHistory: (id: string) => void
+  onLoadMore: () => void
 }
 
 export function ResultPanel({
@@ -26,25 +29,28 @@ export function ResultPanel({
   quality,
   downloadStage,
   history,
+  hasMore,
+  isLoadingMore,
   historySyncWarning,
   onFormatChange,
   onQualityChange,
   onDownload,
   onSelectHistory,
   onDeleteHistory,
+  onLoadMore,
 }: ResultPanelProps) {
-  const [failedHistoryUrls, setFailedHistoryUrls] = useState<string[]>([])
+  const [failedHistoryIDs, setFailedHistoryIDs] = useState<string[]>([])
   const isDownloading = downloadStage !== 'idle'
 
-  function handleHistoryImageError(url: string) {
-    setFailedHistoryUrls((current) =>
-      current.includes(url) ? current : [...current, url],
+  function handleHistoryImageError(id: string) {
+    setFailedHistoryIDs((current) =>
+      current.includes(id) ? current : [...current, id],
     )
   }
 
-  function handleDeleteHistory(url: string) {
-    setFailedHistoryUrls((current) => current.filter((item) => item !== url))
-    onDeleteHistory(url)
+  function handleDeleteHistory(id: string) {
+    setFailedHistoryIDs((current) => current.filter((item) => item !== id))
+    onDeleteHistory(id)
   }
 
   const downloadStatus =
@@ -60,7 +66,7 @@ export function ResultPanel({
   }[messageTone]
 
   return (
-    <section className="card rounded-[1.25rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur sm:rounded-[1.4rem]">
+    <section className="card rounded-[1.25rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-600/50 dark:bg-slate-800/80 dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)] sm:rounded-[1.4rem]">
       <div className="card-body gap-3 p-4 sm:gap-4 sm:p-5">
         <div>
           <h2 className="card-title text-xl font-black text-slate-950">结果</h2>
@@ -97,7 +103,7 @@ export function ResultPanel({
         </div>
 
         <div
-          className={`overflow-hidden rounded-[1.25rem] border border-white/80 bg-gradient-to-br from-slate-50 to-sky-50/70 shadow-inner shadow-slate-200/70 ${
+          className={`overflow-hidden rounded-[1.25rem] border border-white/80 bg-gradient-to-br from-slate-50 to-sky-50/70 shadow-inner shadow-slate-200/70 dark:border-slate-700 dark:from-slate-950 dark:to-slate-800/80 dark:shadow-[inset_0_2px_8px_rgba(0,0,0,0.35)] ${
             image ? 'p-2' : 'px-4 py-3'
           }`}
         >
@@ -115,11 +121,11 @@ export function ResultPanel({
         </div>
 
         {image && (
-          <div className="grid gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+          <div className="grid gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-700/80 dark:bg-slate-900/60">
             <label className="form-control grid gap-2">
               <span className="label-text font-bold text-slate-800">下载格式</span>
               <select
-                className="select select-bordered h-12 w-full rounded-2xl border-slate-200 bg-white/80 shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200"
+                className="select select-bordered h-12 w-full rounded-2xl border-slate-200 bg-white/80 shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900"
                 value={format}
                 onChange={(event) => onFormatChange(event.target.value as DownloadFormat)}
                 disabled={isDownloading}
@@ -188,7 +194,7 @@ export function ResultPanel({
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-black text-slate-800">历史记录</h3>
               <span className="text-xs font-bold tabular-nums text-slate-500">
-                {history.length}/5
+                {history.length}/50
               </span>
             </div>
 
@@ -206,12 +212,12 @@ export function ResultPanel({
                 className="grid grid-cols-5 gap-2"
                 aria-label="最近生成或编辑的图片"
               >
-                {history.map((url, index) => {
-                  const isFailed = history.includes(url) && failedHistoryUrls.includes(url)
-                  const isCurrent = image === url
+                {history.map((task, index) => {
+                  const isFailed = task.status === 'failed' || !task.image || failedHistoryIDs.includes(task.id)
+                  const isCurrent = Boolean(task.image) && image === task.image
 
                   return (
-                    <div key={url} className="relative min-w-0">
+                    <div key={task.id} className="relative min-w-0">
                       {isFailed ? (
                         <div
                           className={`flex aspect-square items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-1.5 text-center text-[11px] font-bold leading-tight text-rose-700 ${
@@ -219,7 +225,7 @@ export function ResultPanel({
                           }`}
                           role="status"
                         >
-                          图片失效
+                          {task.status === 'failed' ? '失败' : '图片未保存'}
                         </div>
                       ) : (
                         <button
@@ -232,13 +238,13 @@ export function ResultPanel({
                           aria-label={`恢复第 ${index + 1} 张历史图片`}
                           aria-pressed={isCurrent}
                           title="恢复这张历史图片"
-                          onClick={() => onSelectHistory(url)}
+                          onClick={() => onSelectHistory(task.image)}
                         >
                           <img
                             className="h-full w-full object-cover"
-                            src={url}
+                            src={task.image}
                             alt={`历史图片 ${index + 1}`}
-                            onError={() => handleHistoryImageError(url)}
+                            onError={() => handleHistoryImageError(task.id)}
                           />
                         </button>
                       )}
@@ -247,7 +253,7 @@ export function ResultPanel({
                         type="button"
                         aria-label={`删除第 ${index + 1} 条历史记录`}
                         title="删除这条历史记录"
-                        onClick={() => handleDeleteHistory(url)}
+                        onClick={() => handleDeleteHistory(task.id)}
                       >
                         <svg
                           className="h-3.5 w-3.5"
@@ -262,6 +268,16 @@ export function ResultPanel({
                   )
                 })}
               </div>
+            )}
+            {hasMore && (
+              <button
+                className="btn btn-ghost min-h-10 rounded-xl font-bold text-sky-700"
+                type="button"
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+              >
+                {isLoadingMore ? '加载中...' : '加载更多'}
+              </button>
             )}
           </div>
         )}

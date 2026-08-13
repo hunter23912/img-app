@@ -44,7 +44,7 @@ export function PromptPresetPanel({
   onApplyModeChange,
   onApplyPrompt,
 }: PromptPresetPanelProps) {
-  const { presets, storageWarning, createPreset, updatePreset, deletePreset } =
+  const { presets, storageWarning, isLoading, createPreset, updatePreset, deletePreset } =
     usePromptPresets();
   const [selectedID, setSelectedID] = useState("");
   const [isManaging, setIsManaging] = useState(false);
@@ -83,11 +83,11 @@ export function PromptPresetPanel({
     setFeedback(null);
   }
 
-  function savePreset() {
+  async function savePreset() {
     const result =
       editor?.kind === "edit" && editor.id
-        ? updatePreset(editor.id, draft)
-        : createPreset(draft);
+        ? await updatePreset(editor.id, draft)
+        : await createPreset(draft);
 
     if (!result.ok) {
       setFeedback({ tone: "error", text: result.error ?? "预设保存失败。" });
@@ -95,11 +95,11 @@ export function PromptPresetPanel({
     }
 
     setEditor(null);
-    setFeedback({ tone: "success", text: "预设已保存到本机。" });
+    setFeedback({ tone: "success", text: "预设已保存到服务端。" });
   }
 
-  function confirmDelete(id: string) {
-    const result = deletePreset(id);
+  async function confirmDelete(id: string) {
+    const result = await deletePreset(id);
     if (!result.ok) {
       setFeedback({ tone: "error", text: result.error ?? "预设删除失败。" });
       return;
@@ -117,7 +117,7 @@ export function PromptPresetPanel({
         <h3 className="text-sm font-bold text-slate-800">提示词预设</h3>
         <div className="flex items-center gap-1">
           <div
-            className="inline-flex rounded-xl bg-slate-100 p-1"
+            className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-950/70"
             role="group"
             aria-label="提示词预设应用方式"
           >
@@ -125,7 +125,7 @@ export function PromptPresetPanel({
               className={`min-h-7 rounded-lg px-2 text-[11px] font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
                 applyMode === "replace"
                   ? "bg-sky-600 text-white shadow-[0_5px_14px_rgba(2,132,199,0.2)]"
-                  : "text-slate-500 hover:text-slate-800"
+                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
               }`}
               type="button"
               aria-pressed={applyMode === "replace"}
@@ -137,7 +137,7 @@ export function PromptPresetPanel({
               className={`min-h-8 rounded-lg px-3 text-xs font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
                 applyMode === "append"
                   ? "bg-sky-600 text-white shadow-[0_5px_14px_rgba(2,132,199,0.2)]"
-                  : "text-slate-500 hover:text-slate-800"
+                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
               }`}
               type="button"
               aria-pressed={applyMode === "append"}
@@ -147,7 +147,7 @@ export function PromptPresetPanel({
             </button>
           </div>
           <button
-            className="btn btn-ghost btn-sm shrink-0 rounded-xl px-3 font-bold text-sky-700"
+            className="btn btn-ghost btn-sm shrink-0 rounded-xl px-3 font-bold text-sky-700 dark:text-sky-300"
             type="button"
             aria-expanded={isManaging}
             onClick={toggleManager}
@@ -157,7 +157,9 @@ export function PromptPresetPanel({
         </div>
       </div>
 
-      {visiblePresets.length > 0 ? (
+      {isLoading ? (
+        <p className="text-sm font-medium text-slate-500">正在加载预设...</p>
+      ) : visiblePresets.length > 0 ? (
         <div
           className="flex flex-wrap gap-1.5"
           aria-label={`${scopeLabels[mode]}可用预设`}
@@ -168,7 +170,7 @@ export function PromptPresetPanel({
               className={`min-h-8 max-w-full rounded-full px-2.5 text-xs font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
                 selectedID === preset.id
                   ? "bg-sky-600 text-white shadow-[0_5px_14px_rgba(2,132,199,0.2)]"
-                  : "bg-sky-50 text-sky-800 hover:bg-sky-100"
+                  : "bg-sky-50 text-sky-800 shadow-[0_1px_4px_rgba(14,116,144,0.06)] hover:bg-sky-100 dark:bg-sky-950/70 dark:text-sky-200 dark:shadow-[0_1px_5px_rgba(0,0,0,0.18)] dark:hover:bg-sky-900/80 dark:hover:text-sky-100"
               }`}
               type="button"
               aria-pressed={selectedID === preset.id}
@@ -181,9 +183,9 @@ export function PromptPresetPanel({
         </div>
       ) : (
         <div className="flex items-center justify-between gap-3 border-y border-slate-200/80 py-3">
-          <p className="text-sm font-medium text-slate-500">暂无预设</p>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">暂无预设</p>
           <button
-            className="btn btn-ghost btn-sm shrink-0 rounded-xl font-bold text-sky-700"
+            className="btn btn-ghost btn-sm shrink-0 rounded-xl font-bold text-sky-700 dark:text-sky-300"
             type="button"
             onClick={() => {
               setIsManaging(true);
@@ -212,11 +214,11 @@ export function PromptPresetPanel({
           </div>
 
           {editor && (
-            <div className="grid gap-3 bg-slate-50/80 p-3">
+            <div className="grid gap-3 bg-slate-50/80 p-3 dark:bg-slate-900/70">
               <label className="grid gap-1.5">
                 <span className="text-xs font-bold text-slate-700">名称</span>
                 <input
-                  className="input input-bordered h-11 w-full rounded-xl border-slate-200 bg-white text-base focus:border-sky-400 focus:outline-sky-200"
+                  className="input input-bordered h-11 w-full rounded-xl border-slate-200 bg-white text-base focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/70 dark:focus:border-sky-400 dark:focus:outline-sky-900"
                   value={draft.name}
                   maxLength={maxPresetNameLength}
                   placeholder="例如：电商产品精修"
@@ -240,7 +242,7 @@ export function PromptPresetPanel({
                   适用模式
                 </span>
                 <select
-                  className="select select-bordered h-11 w-full rounded-xl border-slate-200 bg-white text-base focus:border-sky-400 focus:outline-sky-200"
+                  className="select select-bordered h-11 w-full rounded-xl border-slate-200 bg-white text-base focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/70 dark:focus:border-sky-400 dark:focus:outline-sky-900"
                   value={draft.scope}
                   onChange={(event) =>
                     setDraft((current) => ({
@@ -263,7 +265,7 @@ export function PromptPresetPanel({
                   </span>
                 </span>
                 <textarea
-                  className="textarea textarea-bordered min-h-32 w-full resize-y rounded-xl border-slate-200 bg-white text-base leading-relaxed focus:border-sky-400 focus:outline-sky-200"
+                  className="textarea textarea-bordered min-h-32 w-full resize-y rounded-xl border-slate-200 bg-white text-base leading-relaxed focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/70 dark:focus:border-sky-400 dark:focus:outline-sky-900"
                   value={draft.prompt}
                   maxLength={maxPresetPromptLength}
                   placeholder="填写需要反复使用的完整提示词"
@@ -317,7 +319,7 @@ export function PromptPresetPanel({
                     </div>
                     <div className="flex shrink-0 gap-1">
                       <button
-                        className="btn btn-ghost btn-xs rounded-lg font-bold text-sky-700"
+                        className="btn btn-ghost btn-xs rounded-lg font-bold text-sky-700 dark:text-sky-300"
                         type="button"
                         aria-label={`编辑${preset.name}`}
                         onClick={() => beginEdit(preset)}

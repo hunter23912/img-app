@@ -1,5 +1,12 @@
 import { defaultModel } from '../constants/image'
-import type { DownloadFormat, HealthResponse, ImageResponse } from '../types/image'
+import type {
+  DownloadFormat,
+  HealthResponse,
+  HistoryPage,
+  ImageResponse,
+  PromptPreset,
+  PromptPresetDraft,
+} from '../types/image'
 
 const healthTimeoutMs = 5_000
 const historyTimeoutMs = 10_000
@@ -68,9 +75,11 @@ export async function editImage(input: {
   return parseImageResponse(response)
 }
 
-export async function fetchImageHistory() {
+export async function fetchImageHistory(cursor = ''): Promise<HistoryPage> {
+  const query = new URLSearchParams({ limit: '5' })
+  if (cursor) query.set('cursor', cursor)
   const response = await fetchWithTimeout(
-    '/api/history',
+    `/api/history?${query.toString()}`,
     undefined,
     historyTimeoutMs,
     '历史记录同步超时。',
@@ -87,22 +96,21 @@ export async function fetchImageHistory() {
     throw new Error('历史记录响应无效。')
   }
 
-  if (!isImageHistoryResponse(data)) {
+  if (!isHistoryPage(data)) {
     throw new Error('历史记录响应无效。')
   }
 
-  return data.images
+  return data
 }
 
-export async function deleteImageHistory(image: string) {
+export async function deleteImageHistory(id: string) {
   const response = await fetchWithTimeout(
-    '/api/history',
+    `/api/history/${encodeURIComponent(id)}`,
     {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ image }),
     },
     historyTimeoutMs,
     '历史记录删除超时。',
@@ -111,6 +119,36 @@ export async function deleteImageHistory(image: string) {
   if (!response.ok) {
     throw new Error(await parseErrorResponse(response, '历史记录删除失败'))
   }
+}
+
+export async function fetchPromptPresets() {
+  const response = await fetchWithTimeout('/api/presets', undefined, historyTimeoutMs, '预设同步超时。')
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '预设同步失败'))
+  const data = (await response.json()) as { presets?: PromptPreset[] }
+  if (!data || !Array.isArray(data.presets)) throw new Error('预设响应无效。')
+  return data.presets
+}
+
+export async function createPromptPreset(draft: PromptPresetDraft) {
+  return requestPreset('/api/presets', 'POST', draft)
+}
+
+export async function updatePromptPreset(id: string, draft: PromptPresetDraft) {
+  return requestPreset(`/api/presets/${encodeURIComponent(id)}`, 'PUT', draft)
+}
+
+export async function deletePromptPreset(id: string) {
+  const response = await fetchWithTimeout(`/api/presets/${encodeURIComponent(id)}`, { method: 'DELETE' }, historyTimeoutMs, '预设删除超时。')
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '预设删除失败'))
+}
+
+export async function importPromptPresets(presets: PromptPreset[]) {
+  const response = await fetchWithTimeout('/api/presets/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ presets }),
+  }, historyTimeoutMs, '预设迁移超时。')
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '预设迁移失败'))
 }
 
 export async function downloadImage(input: {
@@ -174,11 +212,20 @@ async function parseErrorResponse(response: Response, fallback: string) {
   return messageForStatus(response.status, '', fallback)
 }
 
-function isImageHistoryResponse(value: unknown): value is { images: string[] } {
-  if (!value || typeof value !== 'object' || !('images' in value)) return false
+function isHistoryPage(value: unknown): value is HistoryPage {
+  if (!value || typeof value !== 'object' || !('tasks' in value)) return false
+  const page = value as { tasks?: unknown; next_cursor?: unknown; has_more?: unknown }
+  return Array.isArray(page.tasks) && typeof page.next_cursor === 'string' && typeof page.has_more === 'boolean'
+}
 
-  const images = value.images
-  return Array.isArray(images) && images.every((image) => typeof image === 'string')
+async function requestPreset(path: string, method: 'POST' | 'PUT', draft: PromptPresetDraft) {
+  const response = await fetchWithTimeout(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(draft),
+  }, historyTimeoutMs, '预设保存超时。')
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '预设保存失败'))
+  return (await response.json()) as PromptPreset
 }
 
 async function fetchWithTimeout(

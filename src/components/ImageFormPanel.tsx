@@ -63,7 +63,7 @@ export function ImageFormPanel({
 
   const submitButton = (
     <button
-      className="btn min-h-12 w-full rounded-2xl border-0 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-base font-black text-white shadow-[0_14px_30px_rgba(59,130,246,0.28)] transition hover:scale-[1.01] hover:brightness-105 disabled:scale-100 disabled:bg-slate-300 sm:min-h-13"
+      className="btn min-h-12 w-full rounded-2xl border-0 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-base font-black text-white shadow-[0_14px_30px_rgba(59,130,246,0.28)] transition hover:scale-[1.01] hover:brightness-105 disabled:scale-100 disabled:bg-slate-300 dark:shadow-[0_14px_30px_rgba(0,0,0,0.35)] sm:min-h-13"
       type="submit"
       disabled={isSubmitting || (mode === "edit" && !sourcePreview)}
     >
@@ -81,10 +81,10 @@ export function ImageFormPanel({
   );
 
   return (
-    <section className="card rounded-[1.25rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur sm:rounded-[1.4rem]">
+    <section className="card rounded-[1.25rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-600/50 dark:bg-slate-800/80 dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)] sm:rounded-[1.4rem]">
       <form className="card-body gap-3 p-4 sm:gap-4 sm:p-5" onSubmit={onSubmit}>
         <div
-          className="grid grid-cols-2 rounded-xl bg-slate-100/80 p-0.5"
+          className="grid grid-cols-2 rounded-xl bg-slate-100/80 p-0.5 dark:bg-slate-950/60"
           role="tablist"
           aria-label="图片模式"
         >
@@ -92,8 +92,8 @@ export function ImageFormPanel({
             type="button"
             className={`h-10 rounded-lg text-sm font-black transition ${
               mode === "generate"
-                ? "bg-white text-slate-950 shadow-sm"
-                : "text-slate-500 hover:text-slate-800"
+                ? "bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-slate-100 dark:shadow-md"
+                : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
             }`}
             onClick={() => onModeChange("generate")}
           >
@@ -103,8 +103,8 @@ export function ImageFormPanel({
             type="button"
             className={`h-10 rounded-lg text-sm font-black transition ${
               mode === "edit"
-                ? "bg-white text-slate-950 shadow-sm"
-                : "text-slate-500 hover:text-slate-800"
+                ? "bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-slate-100 dark:shadow-md"
+                : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
             }`}
             onClick={() => onModeChange("edit")}
           >
@@ -124,7 +124,7 @@ export function ImageFormPanel({
             <span className="label-text font-bold text-slate-800">Prompt</span>
             {prompt.trim() && (
               <button
-                className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl px-2.5 text-xs font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl px-2.5 text-xs font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
                 type="button"
                 onClick={() => {
                   onPromptChange("");
@@ -137,7 +137,7 @@ export function ImageFormPanel({
           </span>
           <textarea
             ref={promptInputRef}
-            className="textarea textarea-bordered min-h-28 w-full resize-y rounded-2xl border-slate-200 bg-white/80 leading-relaxed shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 sm:min-h-36"
+            className="textarea textarea-bordered min-h-28 w-full resize-y rounded-2xl border-slate-200 bg-white/80 leading-relaxed shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:min-h-36"
             value={prompt}
             onChange={(event) => onPromptChange(event.target.value)}
             placeholder="描述你想生成或编辑的画面"
@@ -149,7 +149,7 @@ export function ImageFormPanel({
           <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
             <span className="label-text font-bold text-slate-800">模型</span>
             <select
-              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-3 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 sm:h-12 sm:px-4 sm:text-base"
+              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-3 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-4 sm:text-base"
               value={model}
               onChange={(event) => onModelChange(event.target.value)}
             >
@@ -164,7 +164,7 @@ export function ImageFormPanel({
           <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
             <span className="label-text font-bold text-slate-800">尺寸</span>
             <select
-              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-3 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 sm:h-12 sm:px-4 sm:text-base"
+              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-3 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-4 sm:text-base"
               value={mode === "generate" ? generateSize : editSize}
               onChange={(event) =>
                 mode === "generate"
@@ -187,7 +187,7 @@ export function ImageFormPanel({
         {mode === "edit" && (
           <div className="grid gap-2">
             <span className="label-text font-bold text-slate-800">原图</span>
-            <label className="flex min-h-20 max-h-[min(75svh,42rem)] cursor-pointer items-center justify-center overflow-hidden rounded-3xl border border-dashed border-sky-300/70 bg-sky-50/60 text-sm font-bold text-sky-700/80 transition hover:bg-sky-50">
+            <label className="flex min-h-20 max-h-[min(75svh,42rem)] cursor-pointer items-center justify-center overflow-hidden rounded-3xl border border-dashed border-sky-300/70 bg-sky-50/60 text-sm font-bold text-sky-700/80 transition hover:bg-sky-50 dark:border-sky-700/70 dark:bg-slate-950/50 dark:text-sky-300 dark:hover:bg-slate-900">
               <input
                 accept="image/*"
                 className="hidden"

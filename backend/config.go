@@ -18,6 +18,7 @@ type appConfig struct {
 	Addr                string
 	ImageSourceRegistry *imageSourceRegistry
 	ImageHistory        *imageHistory
+	Database            *appDatabase
 }
 
 func loadConfig() (appConfig, error) {
@@ -41,4 +42,8 @@ func loadConfig() (appConfig, error) {
 		APIKey:   apiKey,
 		Addr:     addr,
 	}, nil
+}
+
+func databasePathFromEnvironment() string {
+	return strings.TrimSpace(os.Getenv("APP_DB_PATH"))
 }

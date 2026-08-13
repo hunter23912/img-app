@@ -9,6 +9,7 @@ import { defaultModel, defaultSize, keepOriginalSize } from './constants/image'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useImageHistory } from './hooks/useImageHistory'
 import { useSourceImagePreview } from './hooks/useSourceImagePreview'
+import { useTheme } from './hooks/useTheme'
 import type { DownloadFormat, DownloadStage, ImageMode, MessageTone } from './types/image'
 
 function App() {
@@ -29,7 +30,16 @@ function App() {
   const isDownloading = downloadStage !== 'idle'
 
   const { health, isConfigured } = useBackendHealth()
-  const { history, syncWarning: historySyncWarning, refreshHistory, removeImage } =
+  const { theme, toggleTheme } = useTheme()
+  const {
+    history,
+    hasMore,
+    isLoadingMore,
+    syncWarning: historySyncWarning,
+    refreshHistory,
+    loadMore,
+    removeTask,
+  } =
     useImageHistory()
   const { sourceImage, sourcePreview, sourceSize, selectSourceImage } = useSourceImagePreview()
 
@@ -88,6 +98,7 @@ function App() {
       setMessage(mode === 'generate' ? '图片生成完成。' : '图片编辑完成。')
       setMessageTone('success')
     } catch (error) {
+      void refreshHistory()
       setMessage(error instanceof Error ? error.message : '图片生成失败。')
       setMessageTone('error')
     } finally {
@@ -145,13 +156,21 @@ function App() {
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col gap-2 px-3 pb-5 pt-3 sm:gap-3 sm:px-5 sm:pb-5 sm:pt-4">
       <header className="flex items-center justify-between gap-2 px-1 sm:gap-3">
-        <h1 className="text-3xl font-black leading-tight tracking-tight text-slate-950">
+        <h1 className="text-3xl font-black leading-tight tracking-tight text-slate-950 dark:text-slate-100">
           像素工坊
         </h1>
-        <StatusCard
-          isConfigured={isConfigured}
-          health={health}
-        />
+        <div className="flex items-center gap-2">
+          <button
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/80 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-700"
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到暗色模式'}
+            title={theme === 'dark' ? '浅色模式' : '暗色模式'}
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
+          <StatusCard isConfigured={isConfigured} health={health} />
+        </div>
       </header>
 
       <div className="grid gap-3 sm:gap-4">
@@ -181,12 +200,15 @@ function App() {
             quality={downloadQuality}
             downloadStage={downloadStage}
             history={history}
+            hasMore={hasMore}
+            isLoadingMore={isLoadingMore}
             historySyncWarning={historySyncWarning}
             onFormatChange={setDownloadFormat}
             onQualityChange={setDownloadQuality}
             onDownload={handleDownloadImage}
             onSelectHistory={handleSelectHistory}
-            onDeleteHistory={removeImage}
+            onDeleteHistory={removeTask}
+            onLoadMore={() => void loadMore()}
           />
         </div>
       </div>

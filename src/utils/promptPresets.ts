@@ -10,92 +10,20 @@ export const promptApplyModeStorageKey = 'img-app.prompt-apply-mode.v1'
 export const maxPromptPresets = 50
 export const maxPresetNameLength = 40
 export const maxPresetPromptLength = 5_000
+export const promptPresetMigrationKey = 'img-app.prompt-presets.migrated.v1'
 
 const storageVersion = 2
 const legacyStorageVersion = 1
 
-const starterPresets: PromptPreset[] = [
-  {
-    id: 'starter-remove-text-watermark',
-    name: '去除水印',
-    scope: 'edit',
-    prompt:
-      '移除图片中的所有文字、Logo 和水印，并根据周围纹理、光影和透视自然补全缺失区域。',
-  },
-  {
-    id: 'starter-remove-face-sticker-mosaic',
-    name: '去脸部遮挡',
-    scope: 'edit',
-    prompt:
-      '去除人物脸部的贴图、表情贴纸、马赛克和遮挡元素，根据脸部轮廓、五官、皮肤纹理、光影和透视自然还原。',
-  },
-  {
-    id: 'starter-enhance-quality',
-    name: '提升画质',
-    scope: 'edit',
-    prompt:
-      '超清画质，提升图片清晰度、细节和质感，修复模糊、噪点、压缩痕迹和锯齿。',
-  },
-  {
-    id: 'starter-reduce-gpt-image-texture',
-    name: '减少鱼鳞纹',
-    scope: 'edit',
-    prompt:
-      '减少鱼鳞状纹理、碎片状褶皱、重复片状细节和不自然的表面噪声。',
-  },
-  {
-    id: 'starter-natural-body-details',
-    name: '人物细节协调',
-    scope: 'edit',
-    prompt:
-      '优化人物的手部、手指、脚部、脚趾、四肢比例、头发和发丝结构，使其自然、合理、协调并符合人体逻辑。保持人物姿态、表情、服装、构图和原有画风不变，避免新增肢体、手指粘连或发丝杂乱。',
-  },
-  {
-    id: 'starter-anime-clean-lines',
-    name: '漫画清线',
-    scope: 'edit',
-    prompt:
-      '保持或转换为干净的二次元漫画画风，统一线稿粗细和结构，减少画面中杂乱、断裂、重复和无意义的线条，整理背景与服装细节，强化主体轮廓，保持构图、人物特征、色彩和主要内容不变。',
-  },
-  {
-    id: 'female-generate',
-    name: '角色生成',
-    scope: 'generate',
-    prompt:
-      '生成一张高冷御姐图，长发，穿着网红网纱披肩式防晒衣，衣服具有层次感，垂坠感，人物手脚合理协调流畅，符合逻辑，减少画面褶皱噪点，保持干净。',
-  },
-]
-
-const starterPresetNameMigrations: Record<
-  string,
-  { from: string[]; to: string }
-> = {
-  'starter-remove-text-watermark': {
-    from: ['去除文字水印', '去除图片文字水印'],
-    to: '去除水印',
-  },
-  'starter-remove-face-sticker-mosaic': {
-    from: ['去除脸部贴图/马赛克'],
-    to: '去脸部遮挡',
-  },
-  'starter-reduce-gpt-image-texture': {
-    from: ['减少鱼鳞纹理/碎片褶皱'],
-    to: '减少鱼鳞纹',
-  },
-  'starter-natural-body-details': {
-    from: ['人物手脚头发协调'],
-    to: '人物细节协调',
-  },
-  'starter-anime-clean-lines': {
-    from: ['二次元漫画清理线条'],
-    to: '漫画清线',
-  },
-}
-
-interface PromptPresetStore {
-  version: number
-  presets: PromptPreset[]
-}
+const starterPresetIDs = new Set([
+  'starter-remove-text-watermark',
+  'starter-remove-face-sticker-mosaic',
+  'starter-enhance-quality',
+  'starter-reduce-gpt-image-texture',
+  'starter-natural-body-details',
+  'starter-anime-clean-lines',
+  'female-generate',
+])
 
 interface ParsedPromptPresetStore {
   version: number
@@ -112,68 +40,18 @@ export interface PromptPresetOperationResult {
   error?: string
 }
 
-export function loadPromptPresets(): PromptPresetLoadResult {
+export function loadLegacyCustomPresets(): PromptPresetLoadResult {
   try {
     const raw = window.localStorage.getItem(promptPresetStorageKey)
-    if (raw === null) {
-      const presets = cloneStarterPresets()
-      const error = persistPromptPresets(presets)
-      return {
-        presets,
-        warning: error ?? '',
-      }
-    }
-
+    if (raw === null) return { presets: [], warning: '' }
     const parsed = parsePromptPresetStore(raw)
-    const mergedPresets =
-      parsed.version === legacyStorageVersion
-        ? mergeStarterPresets(parsed.presets)
-        : parsed.presets
-    const normalized = normalizeStarterPresetNames(mergedPresets)
-    const warning =
-      parsed.version === legacyStorageVersion || normalized.changed
-        ? persistPromptPresets(normalized.presets) ?? ''
-        : ''
-
-    return { presets: normalized.presets, warning }
-  } catch {
+    const merged = parsed.presets
     return {
-      presets: cloneStarterPresets(),
-      warning: '本地预设数据异常，已加载默认预设。保存后将覆盖异常数据。',
-    }
-  }
-}
-
-export function parsePromptPresetStorageValue(raw: string | null): PromptPresetLoadResult {
-  if (raw === null) {
-    return { presets: cloneStarterPresets(), warning: '' }
-  }
-
-  try {
-    const parsed = parsePromptPresetStore(raw)
-    const mergedPresets =
-      parsed.version === legacyStorageVersion
-        ? mergeStarterPresets(parsed.presets)
-        : parsed.presets
-    return {
-      presets: normalizeStarterPresetNames(mergedPresets).presets,
+      presets: merged.filter((preset) => !starterPresetIDs.has(preset.id)),
       warning: '',
     }
   } catch {
-    return {
-      presets: cloneStarterPresets(),
-      warning: '其他页面写入了无效预设数据，已加载默认预设。',
-    }
-  }
-}
-
-export function persistPromptPresets(presets: PromptPreset[]): string | null {
-  try {
-    const value: PromptPresetStore = { version: storageVersion, presets }
-    window.localStorage.setItem(promptPresetStorageKey, JSON.stringify(value))
-    return null
-  } catch {
-    return '无法保存到本机，请检查浏览器存储权限或剩余空间。'
+    return { presets: [], warning: '旧版本地预设数据异常，未执行迁移。' }
   }
 }
 
@@ -240,13 +118,6 @@ export function normalizePromptPresetDraft(draft: PromptPresetDraft): PromptPres
   }
 }
 
-export function createPromptPresetID() {
-  if (typeof window.crypto?.randomUUID === 'function') {
-    return window.crypto.randomUUID()
-  }
-  return `preset-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
 function parsePromptPresetStore(raw: string): ParsedPromptPresetStore {
   const value: unknown = JSON.parse(raw)
   if (
@@ -279,45 +150,6 @@ function parsePromptPresetStore(raw: string): ParsedPromptPresetStore {
   }
 }
 
-function mergeStarterPresets(presets: PromptPreset[]) {
-  const next = [...presets]
-  const ids = new Set(next.map((preset) => preset.id))
-  const names = new Set(next.map((preset) => preset.name.toLocaleLowerCase()))
-
-  for (const starter of starterPresets) {
-    if (next.length >= maxPromptPresets) break
-
-    const normalizedName = starter.name.toLocaleLowerCase()
-    if (ids.has(starter.id) || names.has(normalizedName)) continue
-
-    next.push({ ...starter })
-    ids.add(starter.id)
-    names.add(normalizedName)
-  }
-
-  return next
-}
-
-function normalizeStarterPresetNames(presets: PromptPreset[]) {
-  const names = new Set(presets.map((preset) => preset.name.toLocaleLowerCase()))
-  let changed = false
-  const next = presets.map((preset) => {
-    const migration = starterPresetNameMigrations[preset.id]
-    if (!migration || !migration.from.includes(preset.name)) return preset
-
-    const oldName = preset.name.toLocaleLowerCase()
-    const newName = migration.to.toLocaleLowerCase()
-    if (oldName !== newName && names.has(newName)) return preset
-
-    names.delete(oldName)
-    names.add(newName)
-    changed = true
-    return { ...preset, name: migration.to }
-  })
-
-  return { presets: next, changed }
-}
-
 function isPromptPreset(value: unknown): value is PromptPreset {
   if (!isRecord(value)) return false
 
@@ -344,8 +176,4 @@ function isPromptApplyMode(value: unknown): value is PromptApplyMode {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
-}
-
-function cloneStarterPresets() {
-  return starterPresets.map(preset => ({ ...preset }))
 }

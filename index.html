@@ -8,6 +8,16 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>img-app</title>
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem('img-app.theme.v1')
+          const dark = saved === 'dark' || (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', dark)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

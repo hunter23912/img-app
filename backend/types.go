@@ -42,12 +42,16 @@ type imageResponse struct {
 	Image string `json:"image"`
 }
 
-type imageHistoryResponse struct {
-	Images []string `json:"images"`
-}
-
 type historyDeleteRequest struct {
 	Image string `json:"image"`
+}
+type historyTaskDeleteRequest struct {
+	ID string `json:"id"`
+}
+
+// imageHistoryResponse is retained for tests and compatibility with the legacy in-memory helper.
+type imageHistoryResponse struct {
+	Images []string `json:"images"`
 }
 
 type downloadImageRequest struct {

@@ -15,6 +15,10 @@ dist-ssr
 *.png
 **/.env
 backend/env
+backend/data/
+*.db
+*.db-wal
+*.db-shm
 
 # Editor directories and files
 .vscode/*
