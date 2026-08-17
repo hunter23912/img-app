@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
 )
 
-func TestImageHistoryAddOnlyKeepsRecentHTTPSURLs(t *testing.T) {
+const testHistoryPNGDataURL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+func TestImageHistoryAddKeepsRecentSupportedImages(t *testing.T) {
 	history := newImageHistory()
 	for _, image := range []string{
 		"https://images.example.com/one.png",
@@ -20,16 +23,17 @@ func TestImageHistoryAddOnlyKeepsRecentHTTPSURLs(t *testing.T) {
 		"https://images.example.com/four.png",
 		"https://images.example.com/five.png",
 		"https://images.example.com/six.png",
+		"data:image/png;base64,aGVsbG8=",
 	} {
 		history.Add(image)
 	}
 
 	want := []string{
+		"data:image/png;base64,aGVsbG8=",
 		"https://images.example.com/six.png",
 		"https://images.example.com/five.png",
 		"https://images.example.com/four.png",
 		"https://images.example.com/three.png",
-		"https://images.example.com/two.png",
 	}
 	if got := history.List(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("List() = %#v, want %#v", got, want)
@@ -37,6 +41,7 @@ func TestImageHistoryAddOnlyKeepsRecentHTTPSURLs(t *testing.T) {
 
 	for _, image := range []string{
 		"data:image/png;base64,abc",
+		"data:image/png,not-base64",
 		"http://images.example.com/image.png",
 		"not a URL",
 		"https://",
@@ -135,6 +140,43 @@ func TestHistoryHandlerEmptyHistoryReturnsEmptyArray(t *testing.T) {
 	}
 	if got := recorder.Body.String(); got != "{\"images\":[]}\n" {
 		t.Fatalf("body = %q, want empty images array", got)
+	}
+}
+
+func TestDatabaseHistoryServesBase64ImageByReference(t *testing.T) {
+	database, err := openDatabase(filepath.Join(t.TempDir(), "img-app.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	taskID, err := database.createTask("edit", generateRequest{Model: seedVRModel, Prompt: "Upscale", Size: "2048x2048"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.completeTask(taskID, testHistoryPNGDataURL); err != nil {
+		t.Fatal(err)
+	}
+
+	pageRecorder := httptest.NewRecorder()
+	pageRequest := httptest.NewRequest(http.MethodGet, "/api/history", nil)
+	historyHandler(appConfig{Database: database}).ServeHTTP(pageRecorder, pageRequest)
+	if pageRecorder.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want %d", pageRecorder.Code, http.StatusOK)
+	}
+	var page historyPage
+	if err := json.Unmarshal(pageRecorder.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Tasks) != 1 || page.Tasks[0].Image != historyImagePath(taskID) {
+		t.Fatalf("history task = %#v, want reference %q", page.Tasks, historyImagePath(taskID))
+	}
+
+	imageRecorder := httptest.NewRecorder()
+	imageRequest := httptest.NewRequest(http.MethodGet, historyImagePath(taskID), nil)
+	historyHandler(appConfig{Database: database}).ServeHTTP(imageRecorder, imageRequest)
+	if imageRecorder.Code != http.StatusOK || imageRecorder.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("image response = %d %q, want 200 image/png", imageRecorder.Code, imageRecorder.Header().Get("Content-Type"))
 	}
 }
 

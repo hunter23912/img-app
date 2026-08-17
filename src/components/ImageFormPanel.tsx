@@ -4,6 +4,8 @@ import type { FormEvent } from "react";
 import {
   keepOriginalSize,
   modelOptions,
+  seedVRModel,
+  seedVRSizeOptions,
   sizeOptions,
 } from "../constants/image";
 import type { ImageMode, PromptApplyMode } from "../types/image";
@@ -79,6 +81,7 @@ export function ImageFormPanel({
       )}
     </button>
   );
+  const availableSizeOptions = model === seedVRModel ? seedVRSizeOptions : sizeOptions;
 
   return (
     <section className="card rounded-[1.25rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-600/50 dark:bg-slate-800/80 dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)] sm:rounded-[1.4rem]">
@@ -154,7 +157,11 @@ export function ImageFormPanel({
               onChange={(event) => onModelChange(event.target.value)}
             >
               {modelOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
+                <option
+                  key={opt.value}
+                  value={opt.value}
+                  disabled={mode === 'generate' && opt.editOnly}
+                >
                   {opt.label}
                 </option>
               ))}
@@ -175,7 +182,7 @@ export function ImageFormPanel({
               {mode === "edit" && (
                 <option value={keepOriginalSize}>原图</option>
               )}
-              {sizeOptions.map((option) => (
+              {availableSizeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

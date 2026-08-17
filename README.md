@@ -115,7 +115,7 @@ POST /api/download/image
 
 ### `GET /api/history` 和 `DELETE /api/history`
 
-历史记录由 SQLite 保存最近 50 条生成/编辑任务，所有访问同一个后端的设备共享这份列表。前端首屏请求 5 条，使用 `cursor` 继续分页。只会把 HTTPS 图片 URL 写入数据库，不会保存大型 base64 图片或图片文件。
+历史记录由 SQLite 保存最近 50 条生成/编辑任务，所有访问同一个后端的设备共享这份列表。前端首屏请求 5 条，使用 `cursor` 继续分页。普通结果保存 HTTPS 图片 URL；SeedVR2-7B 返回的 base64 图片结果会持久化在后端，并通过 `/api/history/{taskID}/image` 按需读取，避免历史分页把多张大图一次性传到手机端。
 
 查询返回：
 

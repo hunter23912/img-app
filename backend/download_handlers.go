@@ -113,7 +113,7 @@ func downloadImageHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 
-		imageBytes, err := loadDownloadImage(source, config.ImageSourceRegistry)
+		imageBytes, err := loadDownloadImageForConfig(source, config)
 		if err != nil {
 			slog.Warn("image download rejected", "error", err)
 			status := http.StatusBadRequest
@@ -150,6 +150,23 @@ func downloadImageHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 	}
+}
+
+func loadDownloadImageForConfig(source string, config appConfig) ([]byte, error) {
+	if id, ok := parseHistoryImagePath(source); ok {
+		if config.Database == nil {
+			return nil, fmt.Errorf("history image storage is unavailable")
+		}
+		image, err := config.Database.historyImageData(id)
+		if err != nil {
+			if err == errNotFound {
+				return nil, fmt.Errorf("history image not found")
+			}
+			return nil, err
+		}
+		return decodeImageDataURL(image)
+	}
+	return loadDownloadImage(source, config.ImageSourceRegistry)
 }
 
 func ensureJSONBodyEnded(decoder *json.Decoder) error {

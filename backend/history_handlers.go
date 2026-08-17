@@ -28,6 +28,14 @@ func databaseHistoryHandler(w http.ResponseWriter, r *http.Request, database *ap
 	pathID := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/api/history"), "/")
 	switch r.Method {
 	case http.MethodGet:
+		if imageID, ok := parseHistoryImagePath(r.URL.Path); ok {
+			serveStoredHistoryImage(w, database, imageID)
+			return
+		}
+		if pathID != "" {
+			writeJSON(w, http.StatusNotFound, errorResponse{Error: "history image not found"})
+			return
+		}
 		limit := 5
 		if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
 			parsed, err := strconv.Atoi(rawLimit)
@@ -62,6 +70,34 @@ func databaseHistoryHandler(w http.ResponseWriter, r *http.Request, database *ap
 	}
 }
 
+func serveStoredHistoryImage(w http.ResponseWriter, database *appDatabase, id string) {
+	image, err := database.historyImageData(id)
+	if err != nil {
+		if err == errNotFound {
+			writeJSON(w, http.StatusNotFound, errorResponse{Error: "history image not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "history image read failed"})
+		return
+	}
+
+	imageBytes, err := decodeImageDataURL(image)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "history image data is invalid"})
+		return
+	}
+	contentType, _, err := detectImageType(imageBytes)
+	if err != nil {
+		writeJSON(w, http.StatusUnsupportedMediaType, errorResponse{Error: err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	w.Header().Set("Content-Length", strconv.Itoa(len(imageBytes)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(imageBytes)
+}
+
 func deleteHistoryImage(w http.ResponseWriter, r *http.Request, history *imageHistory) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
@@ -78,7 +114,7 @@ func deleteHistoryImage(w http.ResponseWriter, r *http.Request, history *imageHi
 
 	image := strings.TrimSpace(input.Image)
 	if _, ok := normalizeHistoryImageURL(image); !ok {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "image must be a valid HTTPS URL"})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "image must be a valid HTTPS URL or image data URL"})
 		return
 	}
 

@@ -342,13 +342,19 @@ func (d *appDatabase) completeTask(id, image string) error {
 	return err
 }
 
-func (d *appDatabase) failTask(id string, taskErr error) error {
-	message := "image generation failed"
-	if taskErr != nil {
-		message = taskErr.Error()
+func (d *appDatabase) historyImageData(id string) (string, error) {
+	var image string
+	err := d.db.QueryRow(`SELECT image_url FROM image_tasks WHERE id = ? AND status = 'succeeded'`, id).Scan(&image)
+	if err == sql.ErrNoRows {
+		return "", errNotFound
 	}
-	_, err := d.db.Exec(`UPDATE image_tasks SET status = 'failed', error_message = ?, completed_at = ? WHERE id = ?`, message, nowString(), id)
-	return err
+	if err != nil {
+		return "", err
+	}
+	if !isBase64ImageDataURL(image) {
+		return "", errNotFound
+	}
+	return image, nil
 }
 
 func (d *appDatabase) listTasks(limit int, cursor string) (historyPage, error) {
@@ -359,13 +365,13 @@ func (d *appDatabase) listTasks(limit int, cursor string) (historyPage, error) {
 		limit = 5
 	}
 	args := []any{}
-	where := ""
+	where := "WHERE status = 'succeeded' AND image_url <> ''"
 	if cursor != "" {
 		position, err := decodeHistoryCursor(cursor)
 		if err != nil {
 			return historyPage{}, err
 		}
-		where = "WHERE (created_at < ? OR (created_at = ? AND id < ?))"
+		where += " AND (created_at < ? OR (created_at = ? AND id < ?))"
 		args = append(args, position.CreatedAt, position.CreatedAt, position.ID)
 	}
 	args = append(args, limit+1)
@@ -380,6 +386,7 @@ func (d *appDatabase) listTasks(limit int, cursor string) (historyPage, error) {
 		if err := rows.Scan(&task.ID, &task.Mode, &task.Prompt, &task.Model, &task.Size, &task.Quality, &task.Status, &task.Image, &task.Error, &task.CreatedAt, &task.CompletedAt); err != nil {
 			return historyPage{}, err
 		}
+		task.Image = historyImageReference(task.ID, task.Image)
 		page.Tasks = append(page.Tasks, task)
 	}
 	if err := rows.Err(); err != nil {
@@ -410,7 +417,7 @@ func (d *appDatabase) deleteTask(id string) error {
 }
 
 func (d *appDatabase) listImageSources() ([]string, error) {
-	rows, err := d.db.Query(`SELECT image_url FROM image_tasks WHERE image_url <> '' ORDER BY created_at DESC, id DESC LIMIT ?`, maxStoredTasks)
+	rows, err := d.db.Query(`SELECT image_url FROM image_tasks WHERE status = 'succeeded' AND image_url <> '' ORDER BY created_at DESC, id DESC LIMIT ?`, maxStoredTasks)
 	if err != nil {
 		return nil, err
 	}

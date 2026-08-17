@@ -10,6 +10,7 @@ const (
 	defaultEndpoint = "https://task-api-1-cn.65535.space"
 	defaultModel    = "gpt-image-2-lite"
 	defaultSize     = "1152x2048"
+	seedVRModel     = "seedvr2-7b"
 )
 
 type appConfig struct {

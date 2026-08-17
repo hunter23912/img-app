@@ -30,3 +30,6 @@ backend/data/
 *.njsproj
 *.sln
 *.sw?
+*.jpg
+*.jpeg
+*.png

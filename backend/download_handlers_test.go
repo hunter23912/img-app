@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -152,6 +153,31 @@ func TestDownloadImageAllowsURLTrustedByBackend(t *testing.T) {
 	}
 	if !bytes.Equal(got, source) {
 		t.Fatal("trusted external image fetch changed the response bytes")
+	}
+}
+
+func TestDownloadImageAllowsPersistedHistoryImageReference(t *testing.T) {
+	source := testPNG(t, color.NRGBA{R: 44, G: 66, B: 88, A: 255})
+	database, err := openDatabase(filepath.Join(t.TempDir(), "img-app.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	taskID, err := database.createTask("edit", generateRequest{Model: seedVRModel, Prompt: "Upscale", Size: "2048x2048"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.completeTask(taskID, dataURL(source)); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := serveDownloadRequest(t, downloadImageHandler(appConfig{Database: database}), downloadRequest{
+		Source: historyImagePath(taskID),
+		Format: "png",
+	})
+	if recorder.Code != http.StatusOK || !bytes.Equal(recorder.Body.Bytes(), source) {
+		t.Fatalf("history image download = %d, %d bytes; want %d, %d bytes", recorder.Code, recorder.Body.Len(), http.StatusOK, len(source))
 	}
 }
 

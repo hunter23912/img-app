@@ -132,11 +132,28 @@ func callRelayEdit(
 	if err := writer.WriteField("size", input.Size); err != nil {
 		return "", fmt.Errorf("write size field: %w", err)
 	}
-	if err := writer.WriteField("quality", input.Quality); err != nil {
-		return "", fmt.Errorf("write quality field: %w", err)
-	}
-	if err := writer.WriteField("response_format", "url"); err != nil {
-		return "", fmt.Errorf("write response_format field: %w", err)
+	if input.Model == seedVRModel {
+		seedVRFields := []struct {
+			name  string
+			value string
+		}{
+			{name: "seed", value: "42"},
+			{name: "color_correction", value: "wavelet"},
+			{name: "resize_method", value: "lanczos"},
+			{name: "response_format", value: "b64_json"},
+		}
+		for _, field := range seedVRFields {
+			if err := writer.WriteField(field.name, field.value); err != nil {
+				return "", fmt.Errorf("write %s field: %w", field.name, err)
+			}
+		}
+	} else {
+		if err := writer.WriteField("quality", input.Quality); err != nil {
+			return "", fmt.Errorf("write quality field: %w", err)
+		}
+		if err := writer.WriteField("response_format", "url"); err != nil {
+			return "", fmt.Errorf("write response_format field: %w", err)
+		}
 	}
 
 	if err := copyMultipartFile(writer, "image", imageHeader.Filename, imageFile); err != nil {

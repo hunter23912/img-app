@@ -40,7 +40,10 @@ export function ResultPanel({
   onLoadMore,
 }: ResultPanelProps) {
   const [failedHistoryIDs, setFailedHistoryIDs] = useState<string[]>([])
+  const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false)
   const isDownloading = downloadStage !== 'idle'
+  const visibleHistory = history.filter((task) => task.status === 'succeeded' && Boolean(task.image))
+  const displayedHistory = isHistoryCollapsed ? visibleHistory.slice(0, 5) : visibleHistory
 
   function handleHistoryImageError(id: string) {
     setFailedHistoryIDs((current) =>
@@ -189,12 +192,12 @@ export function ResultPanel({
           </div>
         )}
 
-        {(history.length > 0 || historySyncWarning) && (
+        {(visibleHistory.length > 0 || historySyncWarning) && (
           <div className="grid gap-3 border-t border-slate-200/80 pt-4">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-black text-slate-800">历史记录</h3>
               <span className="text-xs font-bold tabular-nums text-slate-500">
-                {history.length}/50
+                {visibleHistory.length}/50
               </span>
             </div>
 
@@ -207,13 +210,13 @@ export function ResultPanel({
               </p>
             )}
 
-            {history.length > 0 && (
+            {displayedHistory.length > 0 && (
               <div
                 className="grid grid-cols-5 gap-2"
                 aria-label="最近生成或编辑的图片"
               >
-                {history.map((task, index) => {
-                  const isFailed = task.status === 'failed' || !task.image || failedHistoryIDs.includes(task.id)
+                {displayedHistory.map((task, index) => {
+                  const isFailed = failedHistoryIDs.includes(task.id)
                   const isCurrent = Boolean(task.image) && image === task.image
 
                   return (
@@ -269,15 +272,32 @@ export function ResultPanel({
                 })}
               </div>
             )}
-            {hasMore && (
-              <button
-                className="btn btn-ghost min-h-10 rounded-xl font-bold text-sky-700"
-                type="button"
-                onClick={onLoadMore}
-                disabled={isLoadingMore}
-              >
-                {isLoadingMore ? '加载中...' : '加载更多'}
-              </button>
+            {(hasMore || visibleHistory.length > 5) && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {hasMore && (
+                  <button
+                    className="btn btn-ghost min-h-10 rounded-xl font-bold text-sky-700"
+                    type="button"
+                    onClick={() => {
+                      setIsHistoryCollapsed(false)
+                      onLoadMore()
+                    }}
+                    disabled={isLoadingMore}
+                  >
+                    {isLoadingMore ? '加载中...' : '加载更多'}
+                  </button>
+                )}
+                {visibleHistory.length > 5 && (
+                  <button
+                    className="btn btn-ghost min-h-10 rounded-xl font-bold text-slate-600"
+                    type="button"
+                    onClick={() => setIsHistoryCollapsed((current) => !current)}
+                    aria-expanded={!isHistoryCollapsed}
+                  >
+                    {isHistoryCollapsed ? '展开全部' : '收起'}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}

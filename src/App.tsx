@@ -5,7 +5,7 @@ import { downloadImage, editImage, generateImage } from './api/images'
 import { ImageFormPanel } from './components/ImageFormPanel'
 import { ResultPanel } from './components/ResultPanel'
 import { StatusCard } from './components/StatusCard'
-import { defaultModel, defaultSize, keepOriginalSize } from './constants/image'
+import { defaultModel, defaultSize, getSeedVRTargetSize, keepOriginalSize, seedVRModel } from './constants/image'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useImageHistory } from './hooks/useImageHistory'
 import { useSourceImagePreview } from './hooks/useSourceImagePreview'
@@ -26,6 +26,7 @@ function App() {
   const [message, setMessage] = useState('')
   const [messageTone, setMessageTone] = useState<MessageTone>('info')
   const resultPanelRef = useRef<HTMLDivElement>(null)
+  const [resultWasCleared, setResultWasCleared] = useState(false)
 
   const isDownloading = downloadStage !== 'idle'
 
@@ -56,9 +57,30 @@ function App() {
     }
   }, [message, messageTone])
 
+  const latestHistoryImage = history.find((task) => task.status === 'succeeded' && Boolean(task.image))?.image ?? ''
+  const currentResultImage = resultImage || (resultWasCleared ? '' : latestHistoryImage)
+
   function handleImageChange(file: File | null) {
+    setResultWasCleared(true)
     selectSourceImage(file)
     setResultImage('')
+  }
+
+  function handleModeChange(nextMode: ImageMode) {
+    if (nextMode === 'generate' && model === seedVRModel) {
+      setModel(defaultModel)
+      setEditSize(defaultSize)
+    }
+    setMode(nextMode)
+  }
+
+  function handleModelChange(nextModel: string) {
+    setModel(nextModel)
+    if (nextModel === seedVRModel) {
+      setEditSize(keepOriginalSize)
+    } else if (editSize.startsWith('seedvr-')) {
+      setEditSize(defaultSize)
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -76,13 +98,26 @@ function App() {
       return
     }
 
+    if (mode === 'generate' && model === seedVRModel) {
+      setMessage('SeedVR2-7B 仅支持图编辑，请切换到图编辑模式并上传原图。')
+      setMessageTone('error')
+      return
+    }
+
     if (mode === 'edit' && !sourceImage) {
       setMessage('图编辑模式需要先上传一张原图。')
       setMessageTone('error')
       return
     }
 
+    if (mode === 'edit' && model === seedVRModel && !sourceSize) {
+      setMessage('正在读取原图尺寸，请稍后再试。')
+      setMessageTone('error')
+      return
+    }
+
     setIsSubmitting(true)
+    setResultWasCleared(true)
     setResultImage('')
     setMessage(mode === 'generate' ? '正在请求中转站生成图片...' : '正在请求中转站编辑图片...')
     setMessageTone('info')
@@ -111,19 +146,24 @@ function App() {
       throw new Error('图编辑模式需要先上传一张原图。')
     }
 
-    const size = editSize === keepOriginalSize ? sourceSize : editSize
+    const size =
+      editSize === keepOriginalSize
+        ? sourceSize
+        : model === seedVRModel
+          ? getSeedVRTargetSize(sourceSize, editSize)
+          : editSize
     return editImage({ prompt, size, image: sourceImage, model })
   }
 
   async function handleDownloadImage() {
-    if (!resultImage || isDownloading) return
+    if (!currentResultImage || isDownloading) return
 
     setDownloadStage('processing')
     setMessage('')
 
     try {
       const { response, filename } = await downloadImage({
-        source: resultImage,
+        source: currentResultImage,
         format: downloadFormat,
         quality: downloadQuality,
       })
@@ -182,9 +222,9 @@ function App() {
           editSize={editSize}
           sourcePreview={sourcePreview}
           isSubmitting={isSubmitting}
-          onModeChange={setMode}
+          onModeChange={handleModeChange}
           onPromptChange={setPrompt}
-          onModelChange={setModel}
+          onModelChange={handleModelChange}
           onGenerateSizeChange={setGenerateSize}
           onEditSizeChange={setEditSize}
           onSourceImageChange={handleImageChange}
@@ -193,7 +233,7 @@ function App() {
 
         <div ref={resultPanelRef}>
           <ResultPanel
-            image={resultImage}
+            image={currentResultImage}
             message={message}
             messageTone={messageTone}
             format={downloadFormat}

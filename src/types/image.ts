@@ -24,6 +24,7 @@ export interface SizeOption {
 export interface ModelOption {
   value: string
   label: string
+  editOnly?: boolean
 }
 
 export interface PromptPreset {

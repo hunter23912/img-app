@@ -53,38 +53,31 @@ func generateHandler(config appConfig) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 			return
 		}
-		var taskID string
-		if config.Database != nil {
-			taskID, err = config.Database.createTask("generate", input)
-			if err != nil {
-				slog.Error("create image task failed", "error", err)
-				writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "failed to save image task"})
-				return
-			}
-		}
-
 		slog.Info("image generate requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt))
 		image, err := callRelayGenerate(generateURL, config.APIKey, input)
 		if err != nil {
-			if config.Database != nil {
-				if updateErr := config.Database.failTask(taskID, err); updateErr != nil {
-					slog.Error("mark image task failed", "task_id", taskID, "error", updateErr)
-				}
-			}
 			slog.Error("image generate failed", "error", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
 			return
 		}
+		displayImage := image
 		if config.Database != nil {
-			if err := config.Database.completeTask(taskID, image); err != nil {
-				slog.Error("mark image task succeeded", "task_id", taskID, "error", err)
+			taskID, createErr := config.Database.createTask("generate", input)
+			if createErr != nil {
+				slog.Error("create image task failed", "error", createErr)
+			} else if completeErr := config.Database.completeTask(taskID, image); completeErr != nil {
+				slog.Error("mark image task succeeded", "task_id", taskID, "error", completeErr)
+			} else {
+				displayImage = historyImageReference(taskID, image)
 			}
 		}
-		config.ImageSourceRegistry.Trust(image)
-		config.ImageHistory.Add(image)
+		config.ImageSourceRegistry.Trust(displayImage)
+		if config.Database == nil {
+			config.ImageHistory.Add(image)
+		}
 
 		slog.Info("image generate succeeded", "model", input.Model, "size", input.Size)
-		writeJSON(w, http.StatusOK, imageResponse{Image: image})
+		writeJSON(w, http.StatusOK, imageResponse{Image: displayImage})
 	}
 }
 
@@ -137,37 +130,30 @@ func editHandler(config appConfig) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 			return
 		}
-		var taskID string
-		if config.Database != nil {
-			taskID, err = config.Database.createTask("edit", input)
-			if err != nil {
-				slog.Error("create image task failed", "error", err)
-				writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "failed to save image task"})
-				return
-			}
-		}
-
 		slog.Info("image edit requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt), "image", imageHeader.Filename, "has_mask", maskFile != nil)
 		image, err := callRelayEdit(editURL, config.APIKey, input, imageFile, imageHeader, maskFile, maskHeader)
 		if err != nil {
-			if config.Database != nil {
-				if updateErr := config.Database.failTask(taskID, err); updateErr != nil {
-					slog.Error("mark image task failed", "task_id", taskID, "error", updateErr)
-				}
-			}
 			slog.Error("image edit failed", "error", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
 			return
 		}
+		displayImage := image
 		if config.Database != nil {
-			if err := config.Database.completeTask(taskID, image); err != nil {
-				slog.Error("mark image task succeeded", "task_id", taskID, "error", err)
+			taskID, createErr := config.Database.createTask("edit", input)
+			if createErr != nil {
+				slog.Error("create image task failed", "error", createErr)
+			} else if completeErr := config.Database.completeTask(taskID, image); completeErr != nil {
+				slog.Error("mark image task succeeded", "task_id", taskID, "error", completeErr)
+			} else {
+				displayImage = historyImageReference(taskID, image)
 			}
 		}
-		config.ImageSourceRegistry.Trust(image)
-		config.ImageHistory.Add(image)
+		config.ImageSourceRegistry.Trust(displayImage)
+		if config.Database == nil {
+			config.ImageHistory.Add(image)
+		}
 
 		slog.Info("image edit succeeded", "model", input.Model, "size", input.Size)
-		writeJSON(w, http.StatusOK, imageResponse{Image: image})
+		writeJSON(w, http.StatusOK, imageResponse{Image: displayImage})
 	}
 }
