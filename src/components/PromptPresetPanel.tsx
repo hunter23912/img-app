@@ -44,8 +44,14 @@ export function PromptPresetPanel({
   onApplyModeChange,
   onApplyPrompt,
 }: PromptPresetPanelProps) {
-  const { presets, storageWarning, isLoading, createPreset, updatePreset, deletePreset } =
-    usePromptPresets();
+  const {
+    presets,
+    storageWarning,
+    isLoading,
+    createPreset,
+    updatePreset,
+    deletePreset,
+  } = usePromptPresets();
   const [selectedID, setSelectedID] = useState("");
   const [isManaging, setIsManaging] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -114,7 +120,7 @@ export function PromptPresetPanel({
   return (
     <div className="grid gap-3" aria-label="提示词预设">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-bold text-slate-800">提示词预设</h3>
+        <h3 className="text-lg font-bold text-slate-800">提示词预设</h3>
         <div className="flex items-center gap-1">
           <div
             className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-950/70"
@@ -183,7 +189,9 @@ export function PromptPresetPanel({
         </div>
       ) : (
         <div className="flex items-center justify-between gap-3 border-y border-slate-200/80 py-3">
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">暂无预设</p>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            暂无预设
+          </p>
           <button
             className="btn btn-ghost btn-sm shrink-0 rounded-xl font-bold text-sky-700 dark:text-sky-300"
             type="button"

@@ -2,11 +2,12 @@ import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import {
+  aspectRatioOptions,
+  getResolutionOptions,
   keepOriginalSize,
   modelOptions,
   seedVRModel,
   seedVRSizeOptions,
-  sizeOptions,
 } from "../constants/image";
 import type { ImageMode, PromptApplyMode } from "../types/image";
 import {
@@ -20,14 +21,20 @@ interface ImageFormPanelProps {
   mode: ImageMode;
   prompt: string;
   model: string;
-  generateSize: string;
+  generateAspectRatio: string;
+  generateResolution: string;
+  editAspectRatio: string;
+  editResolution: string;
   editSize: string;
   sourcePreview: string;
   isSubmitting: boolean;
-  onModeChange: (mode: ImageMode) => void;
+  isSettingsBusy: boolean;
   onPromptChange: (prompt: string) => void;
   onModelChange: (model: string) => void;
-  onGenerateSizeChange: (size: string) => void;
+  onGenerateAspectRatioChange: (aspectRatio: string) => void;
+  onGenerateResolutionChange: (resolution: string) => void;
+  onEditAspectRatioChange: (aspectRatio: string) => void;
+  onEditResolutionChange: (resolution: string) => void;
   onEditSizeChange: (size: string) => void;
   onSourceImageChange: (file: File | null) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -37,14 +44,20 @@ export function ImageFormPanel({
   mode,
   prompt,
   model,
-  generateSize,
+  generateAspectRatio,
+  generateResolution,
+  editAspectRatio,
+  editResolution,
   editSize,
   sourcePreview,
   isSubmitting,
-  onModeChange,
+  isSettingsBusy,
   onPromptChange,
   onModelChange,
-  onGenerateSizeChange,
+  onGenerateAspectRatioChange,
+  onGenerateResolutionChange,
+  onEditAspectRatioChange,
+  onEditResolutionChange,
   onEditSizeChange,
   onSourceImageChange,
   onSubmit,
@@ -67,9 +80,14 @@ export function ImageFormPanel({
     <button
       className="btn min-h-12 w-full rounded-2xl border-0 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-base font-black text-white shadow-[0_14px_30px_rgba(59,130,246,0.28)] transition hover:scale-[1.01] hover:brightness-105 disabled:scale-100 disabled:bg-slate-300 dark:shadow-[0_14px_30px_rgba(0,0,0,0.35)] sm:min-h-13"
       type="submit"
-      disabled={isSubmitting || (mode === "edit" && !sourcePreview)}
+      disabled={isSubmitting || isSettingsBusy || (mode === "edit" && !sourcePreview)}
     >
-      {isSubmitting ? (
+      {isSettingsBusy ? (
+        <>
+          <span className="loading loading-spinner loading-sm" />
+          准备中...
+        </>
+      ) : isSubmitting ? (
         <>
           <span className="loading loading-spinner loading-sm" />
           {mode === "generate" ? "生成中..." : "编辑中..."}
@@ -81,40 +99,23 @@ export function ImageFormPanel({
       )}
     </button>
   );
-  const availableSizeOptions = model === seedVRModel ? seedVRSizeOptions : sizeOptions;
+  const isSeedVREdit = mode === "edit" && model === seedVRModel;
+  const currentAspectRatio = mode === "generate" ? generateAspectRatio : editAspectRatio;
+  const currentResolution = mode === "generate" ? generateResolution : editResolution;
+  const currentResolutionOptions = isSeedVREdit
+    ? seedVRSizeOptions
+    : getResolutionOptions(currentAspectRatio);
+  const currentSizeOptions = isSeedVREdit
+    ? [{ value: "source-ratio", label: "原图比例" }]
+    : mode === "edit"
+      ? [{ value: keepOriginalSize, label: "原图" }, ...aspectRatioOptions]
+      : aspectRatioOptions;
+  const currentSizeValue = isSeedVREdit ? "source-ratio" : currentAspectRatio;
+  const currentResolutionValue = isSeedVREdit ? editSize : currentResolution;
 
   return (
     <section className="card rounded-[1.25rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-600/50 dark:bg-slate-800/80 dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)] sm:rounded-[1.4rem]">
-      <form className="card-body gap-3 p-4 sm:gap-4 sm:p-5" onSubmit={onSubmit}>
-        <div
-          className="grid grid-cols-2 rounded-xl bg-slate-100/80 p-0.5 dark:bg-slate-950/60"
-          role="tablist"
-          aria-label="图片模式"
-        >
-          <button
-            type="button"
-            className={`h-10 rounded-lg text-sm font-black transition ${
-              mode === "generate"
-                ? "bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-slate-100 dark:shadow-md"
-                : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
-            }`}
-            onClick={() => onModeChange("generate")}
-          >
-            文生图
-          </button>
-          <button
-            type="button"
-            className={`h-10 rounded-lg text-sm font-black transition ${
-              mode === "edit"
-                ? "bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-slate-100 dark:shadow-md"
-                : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
-            }`}
-            onClick={() => onModeChange("edit")}
-          >
-            图编辑
-          </button>
-        </div>
-
+      <form className="card-body gap-3 px-4 pb-4 pt-2 sm:gap-4 sm:px-5 sm:pb-5 sm:pt-3" onSubmit={onSubmit}>
         <PromptPresetPanel
           mode={mode}
           applyMode={promptApplyMode}
@@ -148,7 +149,7 @@ export function ImageFormPanel({
           />
         </label>
 
-        <div className="grid grid-cols-2 gap-2.5 max-[359px]:grid-cols-1 sm:gap-3">
+        <div className="grid grid-cols-3 gap-2.5 max-[359px]:grid-cols-1 sm:gap-3">
           <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
             <span className="label-text font-bold text-slate-800">模型</span>
             <select
@@ -171,21 +172,40 @@ export function ImageFormPanel({
           <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
             <span className="label-text font-bold text-slate-800">尺寸</span>
             <select
-              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-3 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-4 sm:text-base"
-              value={mode === "generate" ? generateSize : editSize}
-              onChange={(event) =>
-                mode === "generate"
-                  ? onGenerateSizeChange(event.target.value)
-                  : onEditSizeChange(event.target.value)
-              }
+              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-2 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-3 sm:text-base"
+              value={currentSizeValue}
+              disabled={isSeedVREdit}
+              onChange={(event) => {
+                if (mode === "generate") {
+                  onGenerateAspectRatioChange(event.target.value);
+                } else {
+                  onEditAspectRatioChange(event.target.value);
+                }
+              }}
             >
-              {mode === "edit" && (
-                <option value={keepOriginalSize}>原图</option>
-              )}
-              {availableSizeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
+              {currentSizeOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
+            <span className="label-text font-bold text-slate-800">分辨率</span>
+            <select
+              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-2 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-3 sm:text-base"
+              value={currentResolutionValue}
+              onChange={(event) => {
+                if (isSeedVREdit) {
+                  onEditSizeChange(event.target.value);
+                } else if (mode === "generate") {
+                  onGenerateResolutionChange(event.target.value);
+                } else {
+                  onEditResolutionChange(event.target.value);
+                }
+              }}
+            >
+              {currentResolutionOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </label>

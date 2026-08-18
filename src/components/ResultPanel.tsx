@@ -1,24 +1,30 @@
-import { useState } from 'react'
+import { useState } from "react";
+import type { CSSProperties } from "react";
 
-import type { DownloadFormat, DownloadStage, ImageTask, MessageTone } from '../types/image'
+import type {
+  DownloadFormat,
+  DownloadStage,
+  ImageTask,
+  MessageTone,
+} from "../types/image";
 
 interface ResultPanelProps {
-  image: string
-  message: string
-  messageTone: MessageTone
-  format: DownloadFormat
-  quality: number
-  downloadStage: DownloadStage
-  history: ImageTask[]
-  hasMore: boolean
-  isLoadingMore: boolean
-  historySyncWarning: string
-  onFormatChange: (format: DownloadFormat) => void
-  onQualityChange: (quality: number) => void
-  onDownload: () => void
-  onSelectHistory: (url: string) => void
-  onDeleteHistory: (id: string) => void
-  onLoadMore: () => void
+  image: string;
+  message: string;
+  messageTone: MessageTone;
+  format: DownloadFormat;
+  quality: number;
+  downloadStage: DownloadStage;
+  history: ImageTask[];
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  historySyncWarning: string;
+  onFormatChange: (format: DownloadFormat) => void;
+  onQualityChange: (quality: number) => void;
+  onDownload: () => void;
+  onSelectHistory: (url: string) => void;
+  onDeleteHistory: (id: string) => void;
+  onLoadMore: () => void;
 }
 
 export function ResultPanel({
@@ -39,34 +45,38 @@ export function ResultPanel({
   onDeleteHistory,
   onLoadMore,
 }: ResultPanelProps) {
-  const [failedHistoryIDs, setFailedHistoryIDs] = useState<string[]>([])
-  const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false)
-  const isDownloading = downloadStage !== 'idle'
-  const visibleHistory = history.filter((task) => task.status === 'succeeded' && Boolean(task.image))
-  const displayedHistory = isHistoryCollapsed ? visibleHistory.slice(0, 5) : visibleHistory
+  const [failedHistoryIDs, setFailedHistoryIDs] = useState<string[]>([]);
+  const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false);
+  const isDownloading = downloadStage !== "idle";
+  const visibleHistory = history.filter(
+    (task) => task.status === "succeeded" && Boolean(task.image),
+  );
+  const displayedHistory = isHistoryCollapsed
+    ? visibleHistory.slice(0, 5)
+    : visibleHistory;
 
   function handleHistoryImageError(id: string) {
     setFailedHistoryIDs((current) =>
       current.includes(id) ? current : [...current, id],
-    )
+    );
   }
 
   function handleDeleteHistory(id: string) {
-    setFailedHistoryIDs((current) => current.filter((item) => item !== id))
-    onDeleteHistory(id)
+    setFailedHistoryIDs((current) => current.filter((item) => item !== id));
+    onDeleteHistory(id);
   }
 
   const downloadStatus =
-    downloadStage === 'processing'
-      ? format === 'jpg'
-        ? 'JPG 压缩中...'
-        : '正在准备 PNG...'
-      : '图片下载中...'
+    downloadStage === "processing"
+      ? format === "jpg"
+        ? "JPG 压缩中..."
+        : "正在准备 PNG..."
+      : "图片下载中...";
   const messageStyle = {
-    info: 'border-sky-200/80 bg-sky-50/80 text-sky-900',
-    success: 'border-emerald-200/80 bg-emerald-50/80 text-emerald-900',
-    error: 'border-rose-200 bg-rose-50 text-rose-900',
-  }[messageTone]
+    info: "border-sky-200/80 bg-sky-50/80 text-sky-900",
+    success: "border-emerald-200/80 bg-emerald-50/80 text-emerald-900",
+    error: "border-rose-200 bg-rose-50 text-rose-900",
+  }[messageTone];
 
   return (
     <section className="card rounded-[1.25rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-600/50 dark:bg-slate-800/80 dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)] sm:rounded-[1.4rem]">
@@ -76,8 +86,8 @@ export function ResultPanel({
           {message && (
             <div
               className={`mt-3 flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-sm font-semibold leading-relaxed ${messageStyle}`}
-              role={messageTone === 'error' ? 'alert' : 'status'}
-              aria-live={messageTone === 'error' ? 'assertive' : 'polite'}
+              role={messageTone === "error" ? "alert" : "status"}
+              aria-live={messageTone === "error" ? "assertive" : "polite"}
               aria-atomic="true"
             >
               <svg
@@ -86,7 +96,7 @@ export function ResultPanel({
                 fill="currentColor"
                 aria-hidden="true"
               >
-                {messageTone === 'error' ? (
+                {messageTone === "error" ? (
                   <path
                     fillRule="evenodd"
                     d="M10 18a8 8 0 100-16 8 8 0 000 16Zm.75-11.75a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5ZM10 14.5a1 1 0 100-2 1 1 0 000 2Z"
@@ -100,14 +110,16 @@ export function ResultPanel({
                   />
                 )}
               </svg>
-              <span className="min-w-0 [overflow-wrap:anywhere]">{message}</span>
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                {message}
+              </span>
             </div>
           )}
         </div>
 
         <div
           className={`overflow-hidden rounded-[1.25rem] border border-white/80 bg-gradient-to-br from-slate-50 to-sky-50/70 shadow-inner shadow-slate-200/70 dark:border-slate-700 dark:from-slate-950 dark:to-slate-800/80 dark:shadow-[inset_0_2px_8px_rgba(0,0,0,0.35)] ${
-            image ? 'p-2' : 'px-4 py-3'
+            image ? "p-2" : "px-4 py-3"
           }`}
         >
           {image ? (
@@ -126,11 +138,15 @@ export function ResultPanel({
         {image && (
           <div className="grid gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-700/80 dark:bg-slate-900/60">
             <label className="form-control grid gap-2">
-              <span className="label-text font-bold text-slate-800">下载格式</span>
+              <span className="label-text font-bold text-slate-800">
+                下载格式
+              </span>
               <select
                 className="select select-bordered h-12 w-full rounded-2xl border-slate-200 bg-white/80 shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900"
                 value={format}
-                onChange={(event) => onFormatChange(event.target.value as DownloadFormat)}
+                onChange={(event) =>
+                  onFormatChange(event.target.value as DownloadFormat)
+                }
                 disabled={isDownloading}
               >
                 <option value="jpg">JPG 压缩图</option>
@@ -138,31 +154,41 @@ export function ResultPanel({
               </select>
             </label>
 
-            {format === 'jpg' && (
-              <label className="form-control grid gap-2">
-                <span className="flex items-center justify-between gap-3">
-                  <span className="label-text font-bold text-slate-800">JPG 质量</span>
-                  <output className="text-sm font-black tabular-nums text-sky-700" htmlFor="download-quality">
-                    {quality}%
-                  </output>
-                </span>
-                <input
-                  id="download-quality"
-                  className="range range-primary w-full max-w-none"
-                  type="range"
-                  min={1}
-                  max={100}
-                  step={1}
-                  value={quality}
-                  onChange={(event) => onQualityChange(Number(event.target.value))}
-                  disabled={isDownloading}
-                  aria-label="JPG 质量"
-                />
-                <span className="flex justify-between px-1 text-xs font-semibold text-slate-500">
-                  <span>1%</span>
-                  <span>100%</span>
-                </span>
-              </label>
+            {format === "jpg" && (
+              <div className="grid gap-2.5 rounded-2xl border border-slate-200/80 bg-white/55 px-3.5 py-3 dark:border-slate-700/80 dark:bg-slate-950/45">
+                <label className="form-control grid gap-2">
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="grid gap-0.5">
+                      <span className="label-text font-bold text-slate-800">
+                        JPG 压缩质量
+                      </span>
+                    </span>
+                    <output
+                      className="rounded-lg bg-sky-50 px-2.5 py-1 text-sm font-black tabular-nums text-sky-700 dark:bg-sky-950/60 dark:text-sky-200"
+                      htmlFor="download-quality"
+                    >
+                      {quality}%
+                    </output>
+                  </span>
+                  <input
+                    id="download-quality"
+                    className="quality-range w-full max-w-none"
+                    style={
+                      { "--quality-progress": `${quality}%` } as CSSProperties
+                    }
+                    type="range"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={quality}
+                    onChange={(event) =>
+                      onQualityChange(Number(event.target.value))
+                    }
+                    disabled={isDownloading}
+                    aria-label="JPG 压缩质量"
+                  />
+                </label>
+              </div>
             )}
 
             {isDownloading && (
@@ -184,10 +210,10 @@ export function ResultPanel({
               disabled={isDownloading}
             >
               {isDownloading
-                ? downloadStage === 'processing'
-                  ? '处理中...'
-                  : '下载中...'
-                : '下载图片'}
+                ? downloadStage === "processing"
+                  ? "处理中..."
+                  : "下载中..."
+                : "下载图片"}
             </button>
           </div>
         )}
@@ -216,26 +242,28 @@ export function ResultPanel({
                 aria-label="最近生成或编辑的图片"
               >
                 {displayedHistory.map((task, index) => {
-                  const isFailed = failedHistoryIDs.includes(task.id)
-                  const isCurrent = Boolean(task.image) && image === task.image
+                  const isFailed = failedHistoryIDs.includes(task.id);
+                  const isCurrent = Boolean(task.image) && image === task.image;
 
                   return (
                     <div key={task.id} className="relative min-w-0">
                       {isFailed ? (
                         <div
                           className={`flex aspect-square items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-1.5 text-center text-[11px] font-bold leading-tight text-rose-700 ${
-                            isCurrent ? 'ring-2 ring-rose-400 ring-offset-2' : ''
+                            isCurrent
+                              ? "ring-2 ring-rose-400 ring-offset-2"
+                              : ""
                           }`}
                           role="status"
                         >
-                          {task.status === 'failed' ? '失败' : '图片未保存'}
+                          {task.status === "failed" ? "失败" : "图片未保存"}
                         </div>
                       ) : (
                         <button
                           className={`block aspect-square w-full overflow-hidden rounded-xl border bg-slate-100 transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
                             isCurrent
-                              ? 'border-sky-500 ring-2 ring-sky-400 ring-offset-2'
-                              : 'border-slate-200/80'
+                              ? "border-sky-500 ring-2 ring-sky-400 ring-offset-2"
+                              : "border-slate-200/80"
                           }`}
                           type="button"
                           aria-label={`恢复第 ${index + 1} 张历史图片`}
@@ -268,7 +296,7 @@ export function ResultPanel({
                         </svg>
                       </button>
                     </div>
-                  )
+                  );
                 })}
               </div>
             )}
@@ -279,12 +307,12 @@ export function ResultPanel({
                     className="btn btn-ghost min-h-10 rounded-xl font-bold text-sky-700"
                     type="button"
                     onClick={() => {
-                      setIsHistoryCollapsed(false)
-                      onLoadMore()
+                      setIsHistoryCollapsed(false);
+                      onLoadMore();
                     }}
                     disabled={isLoadingMore}
                   >
-                    {isLoadingMore ? '加载中...' : '加载更多'}
+                    {isLoadingMore ? "加载中..." : "加载更多"}
                   </button>
                 )}
                 {visibleHistory.length > 5 && (
@@ -294,7 +322,7 @@ export function ResultPanel({
                     onClick={() => setIsHistoryCollapsed((current) => !current)}
                     aria-expanded={!isHistoryCollapsed}
                   >
-                    {isHistoryCollapsed ? '展开全部' : '收起'}
+                    {isHistoryCollapsed ? "展开全部" : "收起"}
                   </button>
                 )}
               </div>
@@ -303,5 +331,5 @@ export function ResultPanel({
         )}
       </div>
     </section>
-  )
+  );
 }

@@ -1,6 +1,6 @@
 # Img App
 
-一个极简的手机端网页应用：前端使用 React + Vite + TypeScript，后端使用 Go。Go 后端从环境变量读取中转站 endpoint 和 API key，通过后端代理调用 `gpt-image-2-lite` 模型，实现文生图和图编辑。
+一个极简的手机端网页应用：前端使用 React + Vite + TypeScript，后端使用 Go。后端代理调用中转站的 `gpt-image-2-lite` 模型，实现文生图和图编辑；图片服务 endpoint 和 API key 可以在网页中配置并保存到 SQLite。
 
 ## 当前项目状态
 
@@ -45,13 +45,13 @@ go mod init img-app/backend
 
 - 输入文生图 prompt。
 - 上传一张原图用于图编辑。
-- 文生图可选择输出尺寸。
-- 图编辑默认原图尺寸，也可以手动选择输出尺寸。
-- 默认调用 `gpt-image-2-lite` 生成图片，默认输出 9:16 的 2K 尺寸（`1152x2048`）。
+- 文生图和图编辑均可选择模型、尺寸（比例）和分辨率。
+- 图编辑额外支持使用原图尺寸；SeedVR2-7B 保持原图比例并提供 1K/2K/4K 选项。
+- 默认调用 `gpt-image-2-lite` 生成图片，默认输出 9:16 的 1K 尺寸（`720x1280`）；9:16 的 2K 尺寸为 `1440x2560`。
 - 在页面展示生成结果。
 - 支持保存或下载结果图。
 
-暂时不做用户系统、计费、数据库、复杂图片管理。
+暂时不做用户系统、计费和复杂图片管理。
 
 图片压缩当前也走本地算法：前端上传图片和参数，Go 后端用标准库解码图片，再按原尺寸重编码为 JPG 或 PNG。JPG 使用质量参数控制体积，PNG 使用最高压缩等级重编码并剥离原始元数据。批量压缩会复用同一套压缩逻辑，把成功处理的图片和 `manifest.json` 明细打进 zip 返回。
 
@@ -69,19 +69,20 @@ React 页面 -> Go 后端 API -> 中转站 gpt-image-2-lite 接口
 
 - 可以避免浏览器跨域问题。
 - 可以统一处理上传图片、错误信息和返回格式。
-- 可以避免把 API key 暴露给第三方脚本或浏览器网络插件。
+- 浏览器只请求本应用后端，避免直接处理跨域中转站请求；API key 的配置和转发集中在本应用接口中。
 - 后续如果要增加鉴权、日志、限流、缓存，也更容易。
 
-当前这个项目由 Go 后端只读取进程环境变量：
+当前项目支持进程环境变量、`.env` 和网页配置三种来源：
 
 ```txt
-IMG_API_KEY      必填，中转站 API key
+IMG_API_KEY      可选，中转站 API key
 IMG_ENDPOINT     可选，默认 https://task-api-1-cn.65535.space
 APP_DB_PATH      可选，默认 data/img-app.db（相对于启动后端时的工作目录）
 ```
 
-后端不会读取 `.env` 文件，也没有内置 API key。缺少 `IMG_API_KEY` 时不会启动。
-前端不展示、不提交 API key。
+后端启动时会读取当前工作目录下的 `.env`；从项目根目录启动时也会兼容读取 `backend/.env`。进程环境变量优先于 `.env`。缺少 API key 时后端仍会启动并提供健康检查和配置接口，但生成或编辑请求会返回配置错误。endpoint 为空时使用内置默认值。
+
+网页的“配置”页面可以保存多个中转站配置，并手动切换当前配置。配置存储在 SQLite 的 `image_profiles` 表中；旧版单配置数据会在升级时迁移为“默认配置”。API key 按个人使用场景明文保存在 SQLite 中，数据库文件会设置为仅当前用户可读写，日志不会输出 key。没有激活配置时，后端继续使用环境变量或默认 endpoint。
 
 SQLite 数据库由后端使用纯 Go 的 `modernc.org/sqlite` 驱动自动创建和迁移。部署时请保留数据库文件；正式环境建议使用独立绝对路径，例如 `APP_DB_PATH=/var/lib/img-app/img-app.db`。
 
@@ -99,7 +100,7 @@ SQLite 数据库由后端使用纯 Go 的 `modernc.org/sqlite` 驱动自动创�
 ssh server 'sudo systemctl restart img-app-backend'
 ```
 
-如果使用 `supervisor`、`pm2`、Docker 或手工后台进程，请替换为对应的重启命令。请确认远端服务的工作目录、`IMG_API_KEY`、`IMG_ENDPOINT` 和 `APP_DB_PATH` 仍然存在；升级时只替换二进制和前端 `dist`，不要删除 SQLite 数据库文件。
+如果使用 `supervisor`、`pm2`、Docker 或手工后台进程，请替换为对应的重启命令。请确认远端服务的工作目录、`.env`/进程环境变量和 `APP_DB_PATH` 仍然存在；升级时只替换二进制和前端 `dist`，不要删除 SQLite 数据库文件。
 
 ## 前后端接口设计
 
@@ -108,6 +109,13 @@ ssh server 'sudo systemctl restart img-app-backend'
 ```txt
 GET /api/history
 DELETE /api/history
+GET /api/settings/image
+PUT /api/settings/image
+GET /api/image-profiles
+POST /api/image-profiles
+PUT /api/image-profiles/{id}
+DELETE /api/image-profiles/{id}
+POST /api/image-profiles/{id}/activate
 POST /api/generate
 POST /api/edit
 POST /api/download/image
@@ -137,6 +145,23 @@ POST /api/download/image
 
 提示词预设使用 `GET/POST /api/presets`、`PUT/DELETE /api/presets/{id}` 和 `POST /api/presets/import`。数据库首次创建时自动写入 7 条内置预设；浏览器旧版本 localStorage 中的自定义预设会尝试迁移一次。主题跟随系统，并在用户切换后保存在当前浏览器。
 
+### `GET /api/settings/image` 和 `PUT /api/settings/image`
+
+读取或保存当前生效的图片服务配置：
+
+```json
+{
+  "endpoint": "https://task-api-1-cn.65535.space",
+  "api_key": "你的中转站 API key"
+}
+```
+
+`PUT` 时 endpoint 必须是合法的 `http` 或 `https` 地址；两个字段都可以为空。保存为空表示清除 SQLite 覆盖值，重新使用 `.env` 或进程环境变量。响应会返回当前生效值，网页打开时会自动读取它。
+
+### `/api/image-profiles`
+
+用于保存和切换多个中转站。第一个新建的配置会自动激活；激活其他配置使用 `POST /api/image-profiles/{id}/activate`。当前激活配置不能直接删除，必须先切换到其他配置。配置列表会返回完整 API key，适合当前单用户自托管场景。
+
 ### `POST /api/generate`
 
 用于文生图。
@@ -147,7 +172,7 @@ POST /api/download/image
 {
   "model": "gpt-image-2-lite",
   "prompt": "一只白色猫坐在窗边，柔和自然光",
-  "size": "1152x2048",
+  "size": "720x1280",
   "quality": "auto"
 }
 ```

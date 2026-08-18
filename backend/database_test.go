@@ -1,9 +1,12 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestDatabaseSeedsAndPersistsData(t *testing.T) {
@@ -47,6 +50,133 @@ func TestDatabaseSeedsAndPersistsData(t *testing.T) {
 	}
 	if _, err := database.createPreset(promptPresetDraft{Name: custom.Name, Prompt: "other", Scope: "all"}); err == nil {
 		t.Fatal("duplicate preset name was accepted")
+	}
+}
+
+func TestDatabasePersistsAndClearsImageSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "img-app.db")
+	database, err := openDatabase(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	saved, err := database.saveImageSettings("https://saved.example", "saved-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Endpoint != "https://saved.example" || saved.APIKey != "saved-key" || saved.UpdatedAt == "" {
+		t.Fatalf("saved image settings = %#v", saved)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	database, err = openDatabase(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	loaded, err := database.getImageSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Endpoint != saved.Endpoint || loaded.APIKey != saved.APIKey {
+		t.Fatalf("reloaded image settings = %#v, want %#v", loaded, saved)
+	}
+
+	config := appConfig{Endpoint: "https://env.example", APIKey: "env-key", Database: database}
+	effective, err := config.effectiveImageSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective.Endpoint != saved.Endpoint || effective.APIKey != saved.APIKey {
+		t.Fatalf("effective saved image settings = %#v", effective)
+	}
+
+	if _, err := database.saveImageSettings("", ""); err != nil {
+		t.Fatal(err)
+	}
+	effective, err = config.effectiveImageSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective.Endpoint != config.Endpoint || effective.APIKey != config.APIKey {
+		t.Fatalf("cleared image settings = %#v, want fallback %#v", effective, resolvedImageSettings{Endpoint: config.Endpoint, APIKey: config.APIKey})
+	}
+}
+
+func TestDatabaseImageProfilesCanBeCreatedActivatedAndDeleted(t *testing.T) {
+	database, err := openDatabase(filepath.Join(t.TempDir(), "img-app.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	first, err := database.createImageProfile("中转站 A", "https://a.example", "key-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.IsActive {
+		t.Fatal("first image profile should be active")
+	}
+	second, err := database.createImageProfile("中转站 B", "https://b.example", "key-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.IsActive {
+		t.Fatal("second image profile should not be active")
+	}
+
+	active, found, err := database.getActiveImageProfile()
+	if err != nil || !found || active.ID != first.ID {
+		t.Fatalf("initial active profile = %#v, found = %v, error = %v", active, found, err)
+	}
+	if _, err := database.activateImageProfile(second.ID); err != nil {
+		t.Fatal(err)
+	}
+	active, found, err = database.getActiveImageProfile()
+	if err != nil || !found || active.ID != second.ID || active.APIKey != "key-b" {
+		t.Fatalf("switched active profile = %#v, found = %v, error = %v", active, found, err)
+	}
+	if err := database.deleteImageProfile(second.ID); err == nil {
+		t.Fatal("deleting active image profile should fail")
+	}
+	if err := database.deleteImageProfile(first.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDatabaseMigratesLegacyImageSettingsToActiveProfile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec(`
+		CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+		INSERT INTO schema_migrations (version, applied_at) VALUES (1, '2026-01-01T00:00:00Z'), (2, '2026-01-01T00:00:00Z');
+		CREATE TABLE image_settings (id INTEGER PRIMARY KEY CHECK (id = 1), endpoint TEXT NOT NULL DEFAULT '', api_key TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);
+		INSERT INTO image_settings (id, endpoint, api_key, updated_at) VALUES (1, 'https://legacy.example', 'legacy-key', '2026-01-02T00:00:00Z');
+	`)
+	if err != nil {
+		_ = legacy.Close()
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	database, err := openDatabase(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	profiles, err := database.listImageProfiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 || !profiles[0].IsActive || profiles[0].Name != "默认配置" || profiles[0].APIKey != "legacy-key" {
+		t.Fatalf("migrated profiles = %#v", profiles)
 	}
 }
 

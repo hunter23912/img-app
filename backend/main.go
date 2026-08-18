@@ -34,6 +34,9 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler(config))
+	mux.HandleFunc("/api/settings/image", imageSettingsHandler(config))
+	mux.HandleFunc("/api/image-profiles", imageProfilesHandler(config))
+	mux.HandleFunc("/api/image-profiles/", imageProfilesHandler(config))
 	mux.HandleFunc("/api/history", historyHandler(config))
 	mux.HandleFunc("/api/history/", historyHandler(config))
 	mux.HandleFunc("/api/presets", presetsHandler(config))
@@ -42,12 +45,17 @@ func main() {
 	mux.HandleFunc("/api/edit", editHandler(config))
 	mux.HandleFunc("/api/download/image", downloadImageHandler(config))
 
+	settings, settingsErr := config.effectiveImageSettings()
+	if settingsErr != nil {
+		slog.Error("load image settings failed", "error", settingsErr)
+		os.Exit(1)
+	}
 	slog.Info("backend starting",
 		"addr", config.Addr,
-		"image_endpoint", config.Endpoint,
-		"api_key_configured", config.APIKey != "",
+		"image_endpoint", settings.Endpoint,
+		"api_key_configured", settings.APIKey != "",
 	)
-	if config.APIKey == "" {
+	if settings.APIKey == "" {
 		slog.Warn("image API key is not configured", "env", "IMG_API_KEY")
 	}
 

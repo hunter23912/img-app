@@ -45,12 +45,32 @@ func buildImagesURL(endpoint string, action string) (string, error) {
 	return parsed.String(), nil
 }
 
+func validateImageEndpoint(endpoint string) error {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("endpoint must be a valid http or https url")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("endpoint must use http or https")
+	}
+	return nil
+}
+
+func normalizeImageEndpoint(endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" || strings.Contains(endpoint, "://") {
+		return endpoint
+	}
+	return "https://" + endpoint
+}
+
 func callRelayGenerate(generateURL string, apiKey string, input generateRequest) (string, error) {
 	payload := relayGenerateRequest{
 		Model:          input.Model,
 		Prompt:         input.Prompt,
 		Size:           input.Size,
 		Quality:        input.Quality,
+		Moderation:     "low",
 		ResponseFormat: "url",
 	}
 
@@ -131,6 +151,9 @@ func callRelayEdit(
 	}
 	if err := writer.WriteField("size", input.Size); err != nil {
 		return "", fmt.Errorf("write size field: %w", err)
+	}
+	if err := writer.WriteField("moderation", "low"); err != nil {
+		return "", fmt.Errorf("write moderation field: %w", err)
 	}
 	if input.Model == seedVRModel {
 		seedVRFields := []struct {

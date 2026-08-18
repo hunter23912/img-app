@@ -5,7 +5,6 @@ import type { HealthState } from '../types/image'
 
 export function useBackendHealth() {
   const [health, setHealth] = useState<HealthState>('checking')
-  const [isConfigured, setIsConfigured] = useState(false)
 
   useEffect(() => {
     let ignore = false
@@ -16,12 +15,10 @@ export function useBackendHealth() {
 
         if (!ignore) {
           setHealth(data.ok ? 'online' : 'offline')
-          setIsConfigured(Boolean(data.configured))
         }
       } catch {
         if (!ignore) {
           setHealth('offline')
-          setIsConfigured(false)
         }
       }
     }
@@ -33,8 +30,5 @@ export function useBackendHealth() {
     }
   }, [])
 
-  return {
-    health,
-    isConfigured,
-  }
+  return { health }
 }

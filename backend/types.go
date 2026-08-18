@@ -5,6 +5,36 @@ type healthResponse struct {
 	Configured bool `json:"configured"`
 }
 
+type imageSettingsRequest struct {
+	Endpoint string `json:"endpoint"`
+	APIKey   string `json:"api_key"`
+}
+
+type imageSettingsResponse struct {
+	Endpoint string `json:"endpoint"`
+	APIKey   string `json:"api_key"`
+}
+
+type imageProfileRequest struct {
+	Name     string `json:"name"`
+	Endpoint string `json:"endpoint"`
+	APIKey   string `json:"api_key"`
+}
+
+type imageProfileResponse struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Endpoint  string `json:"endpoint"`
+	APIKey    string `json:"api_key"`
+	IsActive  bool   `json:"is_active"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type imageProfilesResponse struct {
+	Profiles []imageProfileResponse `json:"profiles"`
+}
+
 type generateRequest struct {
 	Model   string `json:"model"`
 	Prompt  string `json:"prompt"`
@@ -17,6 +47,7 @@ type relayGenerateRequest struct {
 	Prompt         string `json:"prompt"`
 	Size           string `json:"size,omitempty"`
 	Quality        string `json:"quality,omitempty"`
+	Moderation     string `json:"moderation,omitempty"`
 	ResponseFormat string `json:"response_format,omitempty"`
 }
 

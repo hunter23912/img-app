@@ -4,6 +4,9 @@ import type {
   HealthResponse,
   HistoryPage,
   ImageResponse,
+  ImageProfile,
+  ImageProfileDraft,
+  ImageSettings,
   PromptPreset,
   PromptPresetDraft,
 } from '../types/image'
@@ -22,6 +25,134 @@ export async function fetchHealth() {
   } catch {
     throw new Error('后端状态响应无效。')
   }
+}
+
+export async function fetchImageSettings(): Promise<ImageSettings> {
+  const response = await fetchWithTimeout(
+    '/api/settings/image',
+    undefined,
+    healthTimeoutMs,
+    '图片服务配置读取超时。',
+  )
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '图片服务配置读取失败'))
+
+  let data: ImageSettings
+  try {
+    data = (await response.json()) as ImageSettings
+  } catch {
+    throw new Error('图片服务配置响应无效。')
+  }
+  if (typeof data.endpoint !== 'string' || typeof data.api_key !== 'string') {
+    throw new Error('图片服务配置响应无效。')
+  }
+  return data
+}
+
+export async function saveImageSettings(settings: ImageSettings): Promise<ImageSettings> {
+  const response = await fetchWithTimeout(
+    '/api/settings/image',
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    },
+    historyTimeoutMs,
+    '图片服务配置保存超时。',
+  )
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '图片服务配置保存失败'))
+
+  let data: ImageSettings
+  try {
+    data = (await response.json()) as ImageSettings
+  } catch {
+    throw new Error('图片服务配置响应无效。')
+  }
+  if (typeof data.endpoint !== 'string' || typeof data.api_key !== 'string') {
+    throw new Error('图片服务配置响应无效。')
+  }
+  return data
+}
+
+export async function fetchImageProfiles(): Promise<ImageProfile[]> {
+  const response = await fetchWithTimeout('/api/image-profiles', undefined, healthTimeoutMs, '中转站配置读取超时。')
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '中转站配置读取失败'))
+  let data: { profiles?: ImageProfile[] }
+  try {
+    data = (await response.json()) as { profiles?: ImageProfile[] }
+  } catch {
+    throw new Error('中转站配置响应无效。')
+  }
+  if (!data || !Array.isArray(data.profiles)) throw new Error('中转站配置响应无效。')
+  return data.profiles
+}
+
+export async function createImageProfile(draft: ImageProfileDraft): Promise<ImageProfile> {
+  return requestImageProfile('/api/image-profiles', 'POST', draft, '中转站配置创建失败')
+}
+
+export async function updateImageProfile(id: string, draft: ImageProfileDraft): Promise<ImageProfile> {
+  return requestImageProfile(`/api/image-profiles/${encodeURIComponent(id)}`, 'PUT', draft, '中转站配置保存失败')
+}
+
+export async function activateImageProfile(id: string): Promise<ImageProfile> {
+  const response = await fetchWithTimeout(
+    `/api/image-profiles/${encodeURIComponent(id)}/activate`,
+    { method: 'POST' },
+    historyTimeoutMs,
+    '中转站切换超时。',
+  )
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '中转站切换失败'))
+  return parseImageProfileResponse(response)
+}
+
+export async function deleteImageProfile(id: string): Promise<void> {
+  const response = await fetchWithTimeout(
+    `/api/image-profiles/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+    historyTimeoutMs,
+    '中转站配置删除超时。',
+  )
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '中转站配置删除失败'))
+}
+
+async function requestImageProfile(
+  url: string,
+  method: 'POST' | 'PUT',
+  draft: ImageProfileDraft,
+  fallbackMessage: string,
+) {
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    },
+    historyTimeoutMs,
+    fallbackMessage,
+  )
+  if (!response.ok) throw new Error(await parseErrorResponse(response, fallbackMessage))
+  return parseImageProfileResponse(response)
+}
+
+async function parseImageProfileResponse(response: Response): Promise<ImageProfile> {
+  let data: ImageProfile
+  try {
+    data = (await response.json()) as ImageProfile
+  } catch {
+    throw new Error('中转站配置响应无效。')
+  }
+  if (
+    !data ||
+    typeof data.id !== 'string' ||
+    typeof data.name !== 'string' ||
+    typeof data.endpoint !== 'string' ||
+    typeof data.api_key !== 'string' ||
+    typeof data.is_active !== 'boolean'
+  ) {
+    throw new Error('中转站配置响应无效。')
+  }
+  return data
 }
 
 export async function generateImage(prompt: string, size: string, model = defaultModel) {

@@ -17,10 +17,12 @@ func healthHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, healthResponse{
-			OK:         true,
-			Configured: config.APIKey != "",
-		})
+		settings, err := config.effectiveImageSettings()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "failed to load image settings"})
+			return
+		}
+		writeJSON(w, http.StatusOK, healthResponse{OK: true, Configured: settings.APIKey != ""})
 	}
 }
 
@@ -31,8 +33,12 @@ func generateHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 
-		if config.APIKey == "" {
-			// API key 只存在后端环境变量中，前端不会也不应该直接持有密钥。
+		settings, err := config.effectiveImageSettings()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "failed to load image settings"})
+			return
+		}
+		if settings.APIKey == "" {
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "IMG_API_KEY is not configured"})
 			return
 		}
@@ -48,13 +54,13 @@ func generateHandler(config appConfig) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "prompt is required"})
 			return
 		}
-		generateURL, err := buildImagesURL(config.Endpoint, "generations")
+		generateURL, err := buildImagesURL(settings.Endpoint, "generations")
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 			return
 		}
 		slog.Info("image generate requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt))
-		image, err := callRelayGenerate(generateURL, config.APIKey, input)
+		image, err := callRelayGenerate(generateURL, settings.APIKey, input)
 		if err != nil {
 			slog.Error("image generate failed", "error", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
@@ -88,7 +94,12 @@ func editHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 
-		if config.APIKey == "" {
+		settings, err := config.effectiveImageSettings()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "failed to load image settings"})
+			return
+		}
+		if settings.APIKey == "" {
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "IMG_API_KEY is not configured"})
 			return
 		}
@@ -125,13 +136,13 @@ func editHandler(config appConfig) http.HandlerFunc {
 			defer maskFile.Close()
 		}
 
-		editURL, err := buildImagesURL(config.Endpoint, "edits")
+		editURL, err := buildImagesURL(settings.Endpoint, "edits")
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 			return
 		}
 		slog.Info("image edit requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt), "image", imageHeader.Filename, "has_mask", maskFile != nil)
-		image, err := callRelayEdit(editURL, config.APIKey, input, imageFile, imageHeader, maskFile, maskHeader)
+		image, err := callRelayEdit(editURL, settings.APIKey, input, imageFile, imageHeader, maskFile, maskHeader)
 		if err != nil {
 			slog.Error("image edit failed", "error", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})

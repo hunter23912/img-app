@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -54,6 +55,34 @@ func TestBuildImagesURLRejectsInvalidEndpoint(t *testing.T) {
 	}
 }
 
+func TestCallRelayGenerate(t *testing.T) {
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode relay request: %v", err)
+			return
+		}
+		if got := payload["moderation"]; got != "low" {
+			t.Errorf("moderation = %v, want low", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"url":"https://images.example.com/generated.png"}]}`))
+	}))
+	defer relay.Close()
+
+	image, err := callRelayGenerate(
+		relay.URL+"/v1/images/generations",
+		"test-key",
+		generateRequest{Model: defaultModel, Prompt: "test prompt", Size: defaultSize, Quality: "auto"},
+	)
+	if err != nil {
+		t.Fatalf("callRelayGenerate() error = %v", err)
+	}
+	if image != "https://images.example.com/generated.png" {
+		t.Fatalf("image = %q, want generated URL", image)
+	}
+}
+
 func TestCallRelayEditUsesSeedVRFields(t *testing.T) {
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/images/edits" {
@@ -68,6 +97,7 @@ func TestCallRelayEditUsesSeedVRFields(t *testing.T) {
 			"model":            seedVRModel,
 			"prompt":           "Upscale this image",
 			"size":             "2048x2048",
+			"moderation":       "low",
 			"seed":             "42",
 			"color_correction": "wavelet",
 			"resize_method":    "lanczos",

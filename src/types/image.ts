@@ -10,7 +10,7 @@ export type PromptPresetScope = ImageMode | 'all'
 
 export type PromptApplyMode = 'replace' | 'append'
 
-export type AppTab = 'image'
+export type AppTab = 'image' | 'config'
 
 export type HealthState = 'checking' | 'online' | 'offline'
 
@@ -42,6 +42,23 @@ export interface HealthResponse {
   ok?: boolean
   configured?: boolean
 }
+
+export interface ImageSettings {
+  endpoint: string
+  api_key: string
+}
+
+export interface ImageProfile {
+  id: string
+  name: string
+  endpoint: string
+  api_key: string
+  is_active: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export type ImageProfileDraft = Pick<ImageProfile, 'name' | 'endpoint' | 'api_key'>
 
 export interface ImageResponse {
   image?: string
