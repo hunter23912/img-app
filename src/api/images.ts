@@ -1,6 +1,7 @@
 import { defaultModel } from '../constants/image'
 import type {
   DownloadFormat,
+  ModelOption,
   HealthResponse,
   HistoryPage,
   ImageResponse,
@@ -15,6 +16,54 @@ const healthTimeoutMs = 5_000
 const historyTimeoutMs = 10_000
 const imageRequestTimeoutMs = 345_000
 const downloadTimeoutMs = 45_000
+
+export async function fetchImageModels(): Promise<ModelOption[]> {
+  const response = await fetchWithTimeout('/api/models', undefined, healthTimeoutMs, '模型列表读取超时。')
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '模型列表读取失败'))
+
+  let data: { models?: ModelOption[] }
+  try {
+    data = (await response.json()) as { models?: ModelOption[] }
+  } catch {
+    throw new Error('模型列表响应无效。')
+  }
+  if (!data || !Array.isArray(data.models) || data.models.some((model) => !isModelOption(model))) {
+    throw new Error('模型列表响应无效。')
+  }
+  return data.models
+}
+
+export async function createImageModel(model: string): Promise<ModelOption> {
+  const response = await fetchWithTimeout(
+    '/api/models',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    },
+    historyTimeoutMs,
+    '自定义模型添加超时。',
+  )
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '自定义模型添加失败'))
+  let data: unknown
+  try {
+    data = await response.json()
+  } catch {
+    throw new Error('模型响应无效。')
+  }
+  if (!isModelOption(data)) throw new Error('模型响应无效。')
+  return data
+}
+
+export async function deleteImageModel(id: string): Promise<void> {
+  const response = await fetchWithTimeout(
+    `/api/models/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+    historyTimeoutMs,
+    '自定义模型删除超时。',
+  )
+  if (!response.ok) throw new Error(await parseErrorResponse(response, '自定义模型删除失败'))
+}
 
 export async function fetchHealth() {
   const response = await fetchWithTimeout('/api/health', undefined, healthTimeoutMs, '后端连接超时。')
@@ -329,6 +378,17 @@ async function parseImageResponse(response: Response) {
   return data.image
 }
 
+function isModelOption(value: unknown): value is ModelOption {
+  if (!value || typeof value !== 'object') return false
+  const model = value as Partial<ModelOption>
+  return (
+    typeof model.id === 'string' &&
+    typeof model.value === 'string' &&
+    typeof model.label === 'string' &&
+    typeof model.built_in === 'boolean'
+  )
+}
+
 async function parseErrorResponse(response: Response, fallback: string) {
   const contentType = response.headers.get('Content-Type') ?? ''
   if (contentType.includes('application/json')) {
@@ -412,6 +472,9 @@ function messageForStatus(status: number, rawMessage: string | undefined, fallba
   }
   if (message.includes('source url was not generated')) {
     return '图片来源已失效，请重新生成后下载。'
+  }
+  if (message.includes('failed to load image models')) {
+    return '模型列表加载失败，请检查后端服务是否已重启。'
   }
   if (message.includes('too large')) {
     return '图片过大，暂时无法处理。'

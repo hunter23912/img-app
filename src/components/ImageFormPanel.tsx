@@ -5,37 +5,39 @@ import {
   aspectRatioOptions,
   getResolutionOptions,
   keepOriginalSize,
-  modelOptions,
-  seedVRModel,
-  seedVRSizeOptions,
 } from "../constants/image";
-import type { ImageMode, PromptApplyMode } from "../types/image";
+import type { ImageMode, ModelOption, PromptApplyMode } from "../types/image";
 import {
   applyPromptPreset,
   loadPromptApplyMode,
   persistPromptApplyMode,
 } from "../utils/promptPresets";
 import { PromptPresetPanel } from "./PromptPresetPanel";
+import { ModelManagerPanel } from "./ModelManagerPanel";
 
 interface ImageFormPanelProps {
   mode: ImageMode;
   prompt: string;
   model: string;
+  modelOptions: ModelOption[];
+  isModelsLoading: boolean;
+  isModelsSaving: boolean;
+  modelsError: string;
   generateAspectRatio: string;
   generateResolution: string;
   editAspectRatio: string;
   editResolution: string;
-  editSize: string;
   sourcePreview: string;
   isSubmitting: boolean;
   isSettingsBusy: boolean;
   onPromptChange: (prompt: string) => void;
   onModelChange: (model: string) => void;
+  onAddModel: (model: string) => Promise<ModelOption>;
+  onDeleteModel: (id: string) => Promise<void>;
   onGenerateAspectRatioChange: (aspectRatio: string) => void;
   onGenerateResolutionChange: (resolution: string) => void;
   onEditAspectRatioChange: (aspectRatio: string) => void;
   onEditResolutionChange: (resolution: string) => void;
-  onEditSizeChange: (size: string) => void;
   onSourceImageChange: (file: File | null) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
@@ -44,27 +46,32 @@ export function ImageFormPanel({
   mode,
   prompt,
   model,
+  modelOptions,
+  isModelsLoading,
+  isModelsSaving,
+  modelsError,
   generateAspectRatio,
   generateResolution,
   editAspectRatio,
   editResolution,
-  editSize,
   sourcePreview,
   isSubmitting,
   isSettingsBusy,
   onPromptChange,
   onModelChange,
+  onAddModel,
+  onDeleteModel,
   onGenerateAspectRatioChange,
   onGenerateResolutionChange,
   onEditAspectRatioChange,
   onEditResolutionChange,
-  onEditSizeChange,
   onSourceImageChange,
   onSubmit,
 }: ImageFormPanelProps) {
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const [promptApplyMode, setPromptApplyMode] =
     useState<PromptApplyMode>(loadPromptApplyMode);
+  const [isManagingModels, setIsManagingModels] = useState(false);
 
   function handleApplyModeChange(nextMode: PromptApplyMode) {
     setPromptApplyMode(nextMode);
@@ -99,19 +106,14 @@ export function ImageFormPanel({
       )}
     </button>
   );
-  const isSeedVREdit = mode === "edit" && model === seedVRModel;
   const currentAspectRatio = mode === "generate" ? generateAspectRatio : editAspectRatio;
   const currentResolution = mode === "generate" ? generateResolution : editResolution;
-  const currentResolutionOptions = isSeedVREdit
-    ? seedVRSizeOptions
-    : getResolutionOptions(currentAspectRatio);
-  const currentSizeOptions = isSeedVREdit
-    ? [{ value: "source-ratio", label: "原图比例" }]
-    : mode === "edit"
-      ? [{ value: keepOriginalSize, label: "原图" }, ...aspectRatioOptions]
-      : aspectRatioOptions;
-  const currentSizeValue = isSeedVREdit ? "source-ratio" : currentAspectRatio;
-  const currentResolutionValue = isSeedVREdit ? editSize : currentResolution;
+  const currentResolutionOptions = getResolutionOptions(currentAspectRatio);
+  const currentSizeOptions = mode === "edit"
+    ? [{ value: keepOriginalSize, label: "原图" }, ...aspectRatioOptions]
+    : aspectRatioOptions;
+  const currentSizeValue = currentAspectRatio;
+  const currentResolutionValue = currentResolution;
 
   return (
     <section className="card rounded-[1.25rem] border border-white/70 bg-white/75 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-600/50 dark:bg-slate-800/80 dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)] sm:rounded-[1.4rem]">
@@ -149,66 +151,88 @@ export function ImageFormPanel({
           />
         </label>
 
-        <div className="grid grid-cols-3 gap-2.5 max-[359px]:grid-cols-1 sm:gap-3">
-          <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
-            <span className="label-text font-bold text-slate-800">模型</span>
+        <div className="grid gap-3 sm:gap-4">
+          <div className="form-control grid min-w-0 gap-1.5 sm:gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="label-text font-bold text-slate-800">模型</span>
+              <button
+                className="btn btn-ghost btn-sm shrink-0 rounded-xl px-3 font-bold text-sky-700 dark:text-sky-300"
+                type="button"
+                aria-expanded={isManagingModels}
+                onClick={() => setIsManagingModels((current) => !current)}
+                disabled={isModelsLoading || isModelsSaving}
+              >
+                {isManagingModels ? "完成" : "管理"}
+              </button>
+            </div>
             <select
               className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-3 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-4 sm:text-base"
               value={model}
               onChange={(event) => onModelChange(event.target.value)}
+              disabled={isModelsLoading}
             >
               {modelOptions.map((opt) => (
-                <option
-                  key={opt.value}
-                  value={opt.value}
-                  disabled={mode === 'generate' && opt.editOnly}
-                >
+                <option key={opt.id} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
-          </label>
+            {modelsError && !isManagingModels && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-300" role="status">
+                模型列表暂时无法加载，当前仍可使用固定模型。
+              </div>
+            )}
+            {isManagingModels && (
+              <ModelManagerPanel
+                models={modelOptions}
+                isSaving={isModelsSaving}
+                error={modelsError}
+                onAdd={onAddModel}
+                onDelete={onDeleteModel}
+                onAdded={onModelChange}
+              />
+            )}
+          </div>
 
-          <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
-            <span className="label-text font-bold text-slate-800">尺寸</span>
-            <select
-              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-2 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-3 sm:text-base"
-              value={currentSizeValue}
-              disabled={isSeedVREdit}
-              onChange={(event) => {
-                if (mode === "generate") {
-                  onGenerateAspectRatioChange(event.target.value);
-                } else {
-                  onEditAspectRatioChange(event.target.value);
-                }
-              }}
-            >
-              {currentSizeOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+            <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
+              <span className="label-text font-bold text-slate-800">尺寸</span>
+              <select
+                className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-2 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-3 sm:text-base"
+                value={currentSizeValue}
+                onChange={(event) => {
+                  if (mode === "generate") {
+                    onGenerateAspectRatioChange(event.target.value);
+                  } else {
+                    onEditAspectRatioChange(event.target.value);
+                  }
+                }}
+              >
+                {currentSizeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
 
-          <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
-            <span className="label-text font-bold text-slate-800">分辨率</span>
-            <select
-              className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-2 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-3 sm:text-base"
-              value={currentResolutionValue}
-              onChange={(event) => {
-                if (isSeedVREdit) {
-                  onEditSizeChange(event.target.value);
-                } else if (mode === "generate") {
-                  onGenerateResolutionChange(event.target.value);
-                } else {
-                  onEditResolutionChange(event.target.value);
-                }
-              }}
-            >
-              {currentResolutionOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
+            <label className="form-control grid min-w-0 gap-1.5 sm:gap-2">
+              <span className="label-text font-bold text-slate-800">分辨率</span>
+              <select
+                className="select select-bordered h-11 min-w-0 w-full truncate rounded-2xl border-slate-200 bg-white/80 px-2 text-sm shadow-inner shadow-slate-100 transition focus:border-sky-400 focus:outline-sky-200 dark:border-slate-600 dark:bg-slate-950/60 dark:shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)] dark:focus:border-sky-400 dark:focus:outline-sky-900 sm:h-12 sm:px-3 sm:text-base"
+                value={currentResolutionValue}
+                onChange={(event) => {
+                  if (mode === "generate") {
+                    onGenerateResolutionChange(event.target.value);
+                  } else {
+                    onEditResolutionChange(event.target.value);
+                  }
+                }}
+              >
+                {currentResolutionOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         {mode === "edit" && (

@@ -4,54 +4,55 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+
+	"img-app/backend/internal/config"
+	"img-app/backend/internal/history"
+	"img-app/backend/internal/httpapi"
+	"img-app/backend/internal/imageops"
+	"img-app/backend/internal/logging"
+	"img-app/backend/internal/store"
 )
 
 func main() {
-	initLogger()
+	logging.Init()
 
-	config, err := loadConfig()
+	runtimeConfig, err := config.Load()
 	if err != nil {
 		slog.Error("load config failed", "error", err)
 		os.Exit(1)
 	}
-	config.ImageSourceRegistry = newImageSourceRegistry()
-	config.ImageHistory = newImageHistory()
-	database, err := openDatabase(databasePathFromEnvironment())
+	database, err := store.OpenDatabase(config.DatabasePath(runtimeConfig))
 	if err != nil {
 		slog.Error("open database failed", "error", err)
 		os.Exit(1)
 	}
 	defer database.Close()
-	config.Database = database
-	if sources, err := database.listImageSources(); err != nil {
+	imageSources := imageops.NewSourceRegistry()
+	if sources, err := database.ListImageSources(); err != nil {
 		slog.Error("restore image sources failed", "error", err)
 		os.Exit(1)
 	} else {
 		for _, source := range sources {
-			config.ImageSourceRegistry.Trust(source)
+			imageSources.Trust(source)
 		}
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/health", healthHandler(config))
-	mux.HandleFunc("/api/settings/image", imageSettingsHandler(config))
-	mux.HandleFunc("/api/image-profiles", imageProfilesHandler(config))
-	mux.HandleFunc("/api/image-profiles/", imageProfilesHandler(config))
-	mux.HandleFunc("/api/history", historyHandler(config))
-	mux.HandleFunc("/api/history/", historyHandler(config))
-	mux.HandleFunc("/api/presets", presetsHandler(config))
-	mux.HandleFunc("/api/presets/", presetsHandler(config))
-	mux.HandleFunc("/api/generate", generateHandler(config))
-	mux.HandleFunc("/api/edit", editHandler(config))
-	mux.HandleFunc("/api/download/image", downloadImageHandler(config))
+	handlerConfig := httpapi.ServerConfig{
+		Endpoint:            runtimeConfig.Endpoint,
+		APIKey:              runtimeConfig.APIKey,
+		Addr:                runtimeConfig.Addr,
+		ImageSourceRegistry: imageSources,
+		ImageHistory:        history.New(),
+		Database:            database,
+	}
 
-	settings, settingsErr := config.effectiveImageSettings()
+	settings, settingsErr := handlerConfig.EffectiveImageSettings()
 	if settingsErr != nil {
 		slog.Error("load image settings failed", "error", settingsErr)
 		os.Exit(1)
 	}
 	slog.Info("backend starting",
-		"addr", config.Addr,
+		"addr", runtimeConfig.Addr,
 		"image_endpoint", settings.Endpoint,
 		"api_key_configured", settings.APIKey != "",
 	)
@@ -59,7 +60,7 @@ func main() {
 		slog.Warn("image API key is not configured", "env", "IMG_API_KEY")
 	}
 
-	if err := http.ListenAndServe(config.Addr, withRequestLog(withCORS(mux))); err != nil {
+	if err := http.ListenAndServe(runtimeConfig.Addr, httpapi.NewHandler(handlerConfig)); err != nil {
 		slog.Error("backend stopped", "error", err)
 		os.Exit(1)
 	}

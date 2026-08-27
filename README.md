@@ -1,392 +1,347 @@
 # Img App
 
-一个极简的手机端网页应用：前端使用 React + Vite + TypeScript，后端使用 Go。后端代理调用中转站的 `gpt-image-2-lite` 模型，实现文生图和图编辑；图片服务 endpoint 和 API key 可以在网页中配置并保存到 SQLite。
+一个面向手机端的图片生成应用。前端使用 React、Vite 和 TypeScript，后端使用 Go，负责调用 OpenAI Images API 兼容的图片中转站。
 
-## 当前项目状态
+## 当前功能
 
-当前项目已经完成了基础初始化：
+- 文生图和图编辑。
+- 模型选择：固定提供以下三个模型：
+  - gpt-image-2
+  - grok-imagine-image-2.0
+  - gemini3.1-flash-image
+- 支持手动添加和删除自定义模型。自定义模型保存在 SQLite 中，并按当前中转站配置隔离。
+- 支持保存多个中转站配置，并手动切换当前配置。
+- 提示词预设：内置预设、创建、编辑、删除，以及从旧版 localStorage 迁移自定义预设。
+- 生成历史：SQLite 保存最近 50 条成功的生成或编辑记录，支持分页和删除。
+- 结果下载：支持 PNG 原图和指定质量的 JPG 转换，透明区域转 JPG 时使用白色背景。
+- 支持浅色、深色主题和移动端布局。
 
-- 前端：Vite + React + TypeScript，位于项目根目录。
-- 样式：Tailwind CSS + daisyUI。
-- 后端：Go module，位于 `backend/` 目录。
-- 已实现：`GET /api/health` 健康检查。
-- 已实现：SQLite 持久化的 `GET /api/history?limit=5&cursor=...` 和 `DELETE /api/history/{taskID}`。
-- 已实现：SQLite 持久化的共享提示词预设接口和首次启动种子迁移。
-- 已实现：`POST /api/generate` 文生图代理接口。
-- 已实现：`POST /api/edit` 图编辑代理接口。
-- 已实现：手机端基础页面和 Vite `/api` 代理。
-- 已实现：`POST /api/compress` 本地单图图片压缩。
-- 已实现：`POST /api/compress/batch` 本地批量图片压缩并打包 zip。
-- 已实现：`POST /api/watermark/remove` 本地遮罩去水印。
+当前版本不会自动请求中转站的 /v1/models。/api/models 是本应用自己的模型管理接口，用来返回三个固定模型和当前配置下保存的自定义模型；它不是中转站的模型查询接口。
 
-目录大致如下：
+## 项目结构
 
-```txt
+~~~text
 img-app/
-  src/                 React 前端源码
-  public/              前端静态资源
-  package.json         前端依赖和脚本
-  vite.config.ts       Vite 配置
-  backend/
-    go.mod             Go 后端模块
-```
+├── src/
+│   ├── api/              前端 API 请求
+│   ├── components/       页面组件和表单组件
+│   ├── constants/        模型、尺寸等固定选项
+│   ├── hooks/            健康检查、历史、配置、模型和预设状态
+│   ├── types/            TypeScript 类型
+│   └── utils/             提示词预设工具
+├── public/               静态资源
+├── backend/
+│   ├── main.go           后端启动和依赖组装入口
+│   ├── internal/
+│   │   ├── config/       环境变量和运行配置
+│   │   ├── store/        SQLite、迁移和持久化操作
+│   │   ├── provider/     中转站图片接口调用
+│   │   ├── imageops/     图片来源校验、解码、下载和格式转换
+│   │   ├── history/      无数据库场景的内存历史记录
+│   │   ├── httpapi/      路由、handler、响应和中间件
+│   │   └── logging/      日志初始化
+│   ├── go.mod
+│   └── go.sum
+├── vite.config.ts        Vite 开发配置和 API 代理
+├── package.json
+├── deploy.sh             构建并上传脚本
+└── test.http             中转站接口调试示例
+~~~
 
-注意：`go mod init backend` 或 `go mod init img-app/backend` 只会在当前目录生成 `go.mod`，不会自动创建 `backend` 文件夹。因此正确顺序是先创建并进入后端目录，再执行 Go 初始化：
+backend/main.go 只负责启动流程。新增 HTTP 接口时放入 backend/internal/httpapi，数据库操作放入 store，中转站请求放入 provider，不要把具体业务重新堆回 main.go。
 
-```powershell
-mkdir backend
+## 快速开始
+
+### 1. 安装依赖
+
+需要 Node.js、pnpm 和 Go 1.25 或更高版本。
+
+~~~bash
+pnpm install
+~~~
+
+### 2. 配置后端
+
+可以在 backend/.env 中配置以下变量。这个文件已被 Git 忽略，不要把真实 API key 提交到仓库。
+
+~~~dotenv
+IMG_ENDPOINT=https://task-api-1-cn.65535.space
+IMG_API_KEY=你的中转站APIKey
+APP_ADDR=localhost:8080
+APP_DB_PATH=data/img-app.db
+~~~
+
+变量说明：
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| IMG_ENDPOINT | 否 | 图片中转站地址，默认 https://task-api-1-cn.65535.space |
+| IMG_API_KEY | 否 | 中转站 API key；未配置时后端仍可启动，但不能生成或编辑图片 |
+| APP_ADDR | 否 | 后端监听地址，默认 localhost:8080 |
+| APP_DB_PATH | 否 | SQLite 路径，默认是启动后端时工作目录下的 data/img-app.db |
+
+进程环境变量优先于 .env。后端从 backend/ 目录启动时读取 backend/.env；从项目根目录启动时也会兼容读取 backend/.env。
+
+Endpoint 建议填写中转站 API 基础地址，例如：
+
+~~~text
+https://example.com
+https://example.com/v1
+https://example.com/gateway/v1
+~~~
+
+当 endpoint 没有路径时，后端会自动补上 /v1；当 endpoint 已包含路径时，则保留现有路径，只追加 /images/...：
+
+~~~text
+endpoint = https://example.com
+POST https://example.com/v1/images/generations
+POST https://example.com/v1/images/edits
+
+endpoint = https://example.com/gateway/v1
+POST https://example.com/gateway/v1/images/generations
+POST https://example.com/gateway/v1/images/edits
+~~~
+
+### 3. 启动 Go 后端
+
+~~~bash
 cd backend
-go mod init img-app/backend
-```
+go run .
+~~~
 
-## 目标功能
+默认监听 http://localhost:8080。
 
-第一版只做必要功能，适合手机上使用：
+### 4. 启动前端
 
-- 输入文生图 prompt。
-- 上传一张原图用于图编辑。
-- 文生图和图编辑均可选择模型、尺寸（比例）和分辨率。
-- 图编辑额外支持使用原图尺寸；SeedVR2-7B 保持原图比例并提供 1K/2K/4K 选项。
-- 默认调用 `gpt-image-2-lite` 生成图片，默认输出 9:16 的 1K 尺寸（`720x1280`）；9:16 的 2K 尺寸为 `1440x2560`。
-- 在页面展示生成结果。
-- 支持保存或下载结果图。
+另开一个终端，在项目根目录执行：
 
-暂时不做用户系统、计费和复杂图片管理。
+~~~bash
+pnpm dev
+~~~
 
-图片压缩当前也走本地算法：前端上传图片和参数，Go 后端用标准库解码图片，再按原尺寸重编码为 JPG 或 PNG。JPG 使用质量参数控制体积，PNG 使用最高压缩等级重编码并剥离原始元数据。批量压缩会复用同一套压缩逻辑，把成功处理的图片和 `manifest.json` 明细打进 zip 返回。
+打开 Vite 输出的地址，通常是 http://localhost:5173。开发服务器会把前端的 /api 请求代理到 localhost:8080。
 
-去水印当前优先走本地算法：前端上传原图和涂抹生成的 mask，Go 后端在本机做遮罩邻域扩散修复并返回 PNG。这个方案不消耗中转站额度，也不会把图片发给外部模型；适合小面积文字水印、纯色或渐变背景。复杂纹理、人脸、文字内容被水印覆盖时，效果会明显弱于专业图像修复模型。
+## 配置和数据
 
-## 推荐架构
+网页的“配置”页面可以保存多个中转站配置。第一个新建的配置会自动启用，之后可以手动切换。启用的配置优先于环境变量和单配置设置；没有启用配置时，后端使用环境变量或网页保存的单配置设置。
 
-前端不要直接调用中转站，而是：
+SQLite 数据库会自动创建并执行迁移，主要保存：
 
-```txt
-React 页面 -> Go 后端 API -> 中转站 gpt-image-2-lite 接口
-```
+- 中转站配置和 API key。
+- 自定义模型。
+- 提示词预设。
+- 图片生成历史及必要的 base64 图片数据。
 
-原因：
+数据库文件默认位于 backend/data/img-app.db，部署或升级时必须保留。后端会尝试将数据库文件权限设置为仅当前用户可读写。正式部署建议使用独立的绝对路径，例如：
 
-- 可以避免浏览器跨域问题。
-- 可以统一处理上传图片、错误信息和返回格式。
-- 浏览器只请求本应用后端，避免直接处理跨域中转站请求；API key 的配置和转发集中在本应用接口中。
-- 后续如果要增加鉴权、日志、限流、缓存，也更容易。
+~~~dotenv
+APP_DB_PATH=/var/lib/img-app/img-app.db
+~~~
 
-当前项目支持进程环境变量、`.env` 和网页配置三种来源：
+当前配置接口会返回完整 API key，适合单用户、自托管场景。若要公开部署，应在反向代理或应用层增加认证、访问控制和限流。
 
-```txt
-IMG_API_KEY      可选，中转站 API key
-IMG_ENDPOINT     可选，默认 https://task-api-1-cn.65535.space
-APP_DB_PATH      可选，默认 data/img-app.db（相对于启动后端时的工作目录）
-```
+## 接口
 
-后端启动时会读取当前工作目录下的 `.env`；从项目根目录启动时也会兼容读取 `backend/.env`。进程环境变量优先于 `.env`。缺少 API key 时后端仍会启动并提供健康检查和配置接口，但生成或编辑请求会返回配置错误。endpoint 为空时使用内置默认值。
+所有接口都由 Go 后端提供。错误响应统一为：
 
-网页的“配置”页面可以保存多个中转站配置，并手动切换当前配置。配置存储在 SQLite 的 `image_profiles` 表中；旧版单配置数据会在升级时迁移为“默认配置”。API key 按个人使用场景明文保存在 SQLite 中，数据库文件会设置为仅当前用户可读写，日志不会输出 key。没有激活配置时，后端继续使用环境变量或默认 endpoint。
+~~~json
+{
+  "error": "错误信息"
+}
+~~~
 
-SQLite 数据库由后端使用纯 Go 的 `modernc.org/sqlite` 驱动自动创建和迁移。部署时请保留数据库文件；正式环境建议使用独立绝对路径，例如 `APP_DB_PATH=/var/lib/img-app/img-app.db`。
+### 接口总览
 
-### 后续部署
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| GET | /api/health | 健康检查和 API key 配置状态 |
+| GET / PUT | /api/settings/image | 读取或保存单配置图片服务设置 |
+| GET / POST | /api/image-profiles | 获取或新增中转站配置 |
+| PUT / DELETE | /api/image-profiles/{id} | 编辑或删除中转站配置 |
+| POST | /api/image-profiles/{id}/activate | 切换当前中转站 |
+| GET / POST | /api/models | 获取或添加模型 |
+| DELETE | /api/models/{id} | 删除自定义模型 |
+| GET | /api/history | 分页获取成功的生成历史 |
+| GET | /api/history/{taskID}/image | 获取历史中的 base64 图片 |
+| DELETE | /api/history/{taskID} | 删除一条历史记录 |
+| GET / POST | /api/presets | 获取或创建提示词预设 |
+| PUT / DELETE | /api/presets/{id} | 编辑或删除提示词预设 |
+| POST | /api/presets/import | 批量导入提示词预设 |
+| POST | /api/generate | 文生图 |
+| POST | /api/edit | 图编辑 |
+| POST | /api/download/image | 下载或转换图片 |
 
-可以运行：
+### 模型管理
 
-```bash
-./deploy.sh
-```
+固定模型始终由后端返回，不能删除：
 
-但当前脚本只执行前端构建、后端交叉编译和 `scp` 上传，不负责登录服务器或重启远端进程。执行完成后，需要按照服务器上的进程管理方式重启后端，例如：
+~~~text
+gpt-image-2
+grok-imagine-image-2.0
+gemini3.1-flash-image
+~~~
 
-```bash
-ssh server 'sudo systemctl restart img-app-backend'
-```
+添加自定义模型：
 
-如果使用 `supervisor`、`pm2`、Docker 或手工后台进程，请替换为对应的重启命令。请确认远端服务的工作目录、`.env`/进程环境变量和 `APP_DB_PATH` 仍然存在；升级时只替换二进制和前端 `dist`，不要删除 SQLite 数据库文件。
+~~~http
+POST /api/models
+Content-Type: application/json
 
-## 前后端接口设计
+{"model":"vendor/custom-image"}
+~~~
 
-后端接口：
+自定义模型名会去除首尾空格，同一中转站配置下不允许重复。切换中转站后，只能使用固定模型和该配置保存的自定义模型。
 
-```txt
-GET /api/history
-DELETE /api/history
-GET /api/settings/image
-PUT /api/settings/image
-GET /api/image-profiles
-POST /api/image-profiles
-PUT /api/image-profiles/{id}
-DELETE /api/image-profiles/{id}
-POST /api/image-profiles/{id}/activate
+### 文生图
+
+~~~http
 POST /api/generate
-POST /api/edit
-POST /api/download/image
-```
+Content-Type: application/json
 
-### `GET /api/history` 和 `DELETE /api/history`
-
-历史记录由 SQLite 保存最近 50 条生成/编辑任务，所有访问同一个后端的设备共享这份列表。前端首屏请求 5 条，使用 `cursor` 继续分页。普通结果保存 HTTPS 图片 URL；SeedVR2-7B 返回的 base64 图片结果会持久化在后端，并通过 `/api/history/{taskID}/image` 按需读取，避免历史分页把多张大图一次性传到手机端。
-
-查询返回：
-
-```json
 {
-	"tasks": [{
-		"id": "task-id",
-		"mode": "generate",
-		"status": "succeeded",
-		"image": "https://example.com/image.png",
-		"error": ""
-	}],
-	"next_cursor": "...",
-	"has_more": false
-}
-```
-
-删除时使用 `DELETE /api/history/{taskID}`，成功返回 `204 No Content`。
-
-提示词预设使用 `GET/POST /api/presets`、`PUT/DELETE /api/presets/{id}` 和 `POST /api/presets/import`。数据库首次创建时自动写入 7 条内置预设；浏览器旧版本 localStorage 中的自定义预设会尝试迁移一次。主题跟随系统，并在用户切换后保存在当前浏览器。
-
-### `GET /api/settings/image` 和 `PUT /api/settings/image`
-
-读取或保存当前生效的图片服务配置：
-
-```json
-{
-  "endpoint": "https://task-api-1-cn.65535.space",
-  "api_key": "你的中转站 API key"
-}
-```
-
-`PUT` 时 endpoint 必须是合法的 `http` 或 `https` 地址；两个字段都可以为空。保存为空表示清除 SQLite 覆盖值，重新使用 `.env` 或进程环境变量。响应会返回当前生效值，网页打开时会自动读取它。
-
-### `/api/image-profiles`
-
-用于保存和切换多个中转站。第一个新建的配置会自动激活；激活其他配置使用 `POST /api/image-profiles/{id}/activate`。当前激活配置不能直接删除，必须先切换到其他配置。配置列表会返回完整 API key，适合当前单用户自托管场景。
-
-### `POST /api/generate`
-
-用于文生图。
-
-前端提交：
-
-```json
-{
-  "model": "gpt-image-2-lite",
+  "model": "gpt-image-2",
   "prompt": "一只白色猫坐在窗边，柔和自然光",
   "size": "720x1280",
   "quality": "auto"
 }
-```
+~~~
 
-后端负责：
+当前网页提供 1:1 和 9:16 两种比例，以及 1k、2k 两种分辨率：
 
-- 校验 prompt 是否为空。
-- 拼接中转站图片生成接口地址。
-- 使用 `Authorization: Bearer <IMG_API_KEY>` 调用中转站。
-- 返回图片 URL 或 base64 数据给前端。
+| 比例 | 1k | 2k |
+| --- | --- | --- |
+| 1:1 | 1024x1024 | 2048x2048 |
+| 9:16 | 720x1280 | 1440x2560 |
 
-### `POST /api/edit`
+请求成功后返回：
 
-用于图编辑。
+~~~json
+{
+  "image": "https://example.com/image.png"
+}
+~~~
 
-前端提交：
+中转站返回 b64_json 时，后端会转换为 data URL。成功结果会写入 SQLite 历史记录；外部 URL 会加入后端信任列表，供下载接口校验。
 
-- prompt
-- image 文件
-- 可选 mask 文件
-- size 可选；为空时后端不传该字段，中转站按默认处理
+### 图编辑
 
-后端负责：
+~~~http
+POST /api/edit
+Content-Type: multipart/form-data
+~~~
 
-- 接收 multipart form-data。
-- 将图片和 prompt 转发给中转站图编辑接口。
-- 返回编辑后的图片结果。
+表单字段：
 
-### `POST /api/download/image`
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| model | 否 | 模型名，默认 gpt-image-2 |
+| prompt | 是 | 编辑要求 |
+| size | 否 | 输出尺寸；网页选择“原图”时使用原图尺寸 |
+| quality | 否 | 当前网页传 auto |
+| image | 是 | 原图文件 |
+| mask | 否 | 可选遮罩文件，供 API 调用者使用 |
 
-用于下载生成结果。请求体为：
+图编辑请求会以 multipart 形式转发给中转站的 /v1/images/edits。
 
-```json
+### 历史记录
+
+~~~http
+GET /api/history?limit=5&cursor=...
+DELETE /api/history/{taskID}
+~~~
+
+limit 范围为 1-5，不传时为 5。返回格式：
+
+~~~json
+{
+  "tasks": [],
+  "next_cursor": "",
+  "has_more": false
+}
+~~~
+
+中转站返回的 HTTPS 图片保存为 URL；返回 base64 图片时，历史列表中的 image 会指向 /api/history/{taskID}/image，避免一次性把多个大图放进分页响应。
+
+### 图片下载
+
+~~~http
+POST /api/download/image
+Content-Type: application/json
+
 {
   "source": "当前图片 URL 或 data URL",
   "format": "jpg",
   "quality": 95
 }
-```
+~~~
 
-`format` 支持 `png` 和 `jpg`。PNG 直接返回原始图片数据；JPG 在后端解码后按 `quality`（`1-100`，缺省为 `95`）编码，透明区域使用白色填充。外部图片 URL 仅允许 HTTPS，并且必须是当前 Go 后端刚从生成或编辑接口收到的图片 URL；`data:image/...` 可直接处理。
+format 支持 png 和 jpg。外部图片 URL 必须是 HTTPS，且必须是当前后端生成或恢复的可信来源；data URL 可以直接处理。JPG 质量范围为 1-100，默认 95。
 
-当前按中转站 OpenAI 兼容接口实现。页面里 endpoint 默认是：
+## 开发和验证
 
-```txt
-https://task-api-1-cn.65535.space
-```
+后端包结构调整后，后端仍保持原来的启动和构建方式：
 
-后端会自动拼接成：
-
-```txt
-POST {endpoint}/v1/images/generations
-POST {endpoint}/v1/images/edits
-```
-
-如果你想直接输入完整地址，也可以填：
-
-```txt
-https://task-api-1-cn.65535.space/v1/images/generations
-```
-
-中转站同步等待模式最多可能阻塞 5 分钟，Go 后端 HTTP client 当前设置了 330 秒超时。
-
-## 开发步骤
-
-### 1. 整理后端骨架
-
-在 `backend/` 中创建：
-
-```txt
-backend/
-  go.mod
-  main.go
-```
-
-`main.go` 先只做三件事：
-
-- 启动 HTTP 服务。
-- 提供 `/api/health` 健康检查。
-- 开启基本 CORS，方便 Vite 开发环境访问。
-
-### 2. 配置前端代理
-
-在 `vite.config.ts` 中配置 `/api` 代理到 Go 后端，例如：
-
-```ts
-server: {
-  proxy: {
-    '/api': 'http://localhost:8080',
-  },
-}
-```
-
-这样前端可以直接请求：
-
-```ts
-fetch("/api/health");
-```
-
-不用关心后端实际端口。
-
-### 3. 做手机端基础页面
-
-React 页面先分成几个区域：
-
-- 后端配置状态区。
-- 模式切换：文生图 / 图编辑。
-- prompt 输入区。
-- 图片上传区，仅图编辑模式显示。
-- 生成按钮。
-- 结果预览区。
-
-当前样式方案使用 Tailwind CSS + daisyUI，主要使用 daisyUI 的 `card`、`input`、`textarea`、`select`、`tabs`、`btn`、`alert` 等组件类名。
-
-### 4. 实现文生图接口
-
-先实现 `/api/generate`：
-
-- 前端把 prompt、size 发送给 Go。
-- Go 调用中转站。
-- Go 把图片结果返回给 React。
-- React 展示生成结果。
-
-这一阶段先把文生图跑通，不处理图编辑。
-
-### 5. 实现图编辑接口
-
-再实现 `/api/edit`：
-
-- 前端上传图片和 prompt。
-- Go 解析 multipart form-data。
-- Go 转发给中转站。
-- React 展示编辑结果。
-
-### 6. 打包与部署
-
-开发阶段：
-
-在启动 Go 后端的同一个 PowerShell 终端中设置环境变量：
-
-```powershell
-$env:IMG_API_KEY = "你的中转站 API key"
-$env:IMG_ENDPOINT = "https://task-api-1-cn.65535.space"
-```
-
-然后启动后端：
-
-```powershell
+~~~bash
 cd backend
-go run .
-```
-
-另开一个终端：
-
-```powershell
-pnpm dev
-```
-
-生产阶段：
-
-```powershell
+go test ./...
+go vet ./...
+go build -o /tmp/img-app-backend .
+cd ..
+pnpm lint
 pnpm build
-```
+git diff --check
+~~~
 
-后续可以让 Go 后端托管前端生成的 `dist/` 文件，这样最终只需要启动一个 Go 服务。
+如果只改前端，可以使用：
 
-## 实现顺序建议
+~~~bash
+pnpm lint
+pnpm build
+~~~
 
-推荐按这个顺序做：
+## 部署
 
-1. 写 `backend/main.go`，跑通 `/api/health`。
-2. 配置 Vite 代理，确认 React 能请求 `/api/health`。
-3. 重写前端页面，做手机端表单和结果展示。
-4. 实现 `/api/generate`。
-5. 接入真实中转站，调通文生图。
-6. 实现 `/api/edit`。
-7. 优化错误提示、加载状态和下载按钮。
+执行：
 
-不要一开始就同时做文生图、图编辑、部署和美化。先把最短链路跑通：
+~~~bash
+./deploy.sh
+~~~
 
-```txt
-页面输入 prompt -> Go 后端 -> 中转站 -> 返回图片 -> 页面展示
-```
+当前脚本会：
 
-## 当前接口
+1. 构建前端 dist/。
+2. 使用 GOOS=linux GOARCH=amd64 编译后端。
+3. 通过 scp 上传 dist/、后端二进制和 backend/.env 到脚本中配置的 server SSH 主机。
 
-当前已经完成这些接口：
+脚本不会登录服务器重启后端，需要根据实际进程管理方式手动重启，例如：
 
-- `GET /api/health` 返回 `{ "ok": true }`
-- 服务监听 `localhost:8080`
-- 前端后续通过 Vite 代理访问它
-- `POST /api/generate` 会调用兼容 OpenAI Images API 的中转站。
-- `POST /api/edit` 会转发 multipart 图片到中转站。
-- `POST /api/compress` 会在本地保持原尺寸重编码单张 JPG/PNG。
-- `POST /api/compress/batch` 会在本地批量压缩多张图片，返回 zip 压缩包。
-- `POST /api/watermark/remove` 会在本地根据 mask 修复标记区域。
+~~~bash
+ssh server 'sudo systemctl restart img-app-backend'
+~~~
 
-本地运行方式：
+生产环境建议由 Nginx 托管 dist/，并将 /api 反向代理到 Go 后端。升级时只替换前端文件和后端二进制，不要删除或覆盖 SQLite 数据库。
 
-```powershell
-cd backend
-go run .
-```
+## 已知限制
 
-另开一个终端：
+- 当前只按 OpenAI Images API 兼容格式调用中转站，不同中转站的额外参数不会自动适配。
+- 生成和编辑使用同步等待模式，后端请求超时约为 330 秒。
+- 没有用户系统、登录、鉴权、限流和计费功能，不适合直接暴露到公网。
+- 不会自动查询中转站 /v1/models；模型列表需要使用固定模型或手动添加自定义模型。
+- 历史中的外部图片仍依赖中转站 URL 的有效期；base64 结果才会由本地数据库保存图片数据。
 
-```powershell
-pnpm dev
-```
+## 常见问题
 
-打开 Vite 输出的本地地址，通常是：
+### “模型列表暂时无法加载，当前仍可使用固定模型”是什么原因？
 
-```txt
-http://localhost:5173
-```
+这是前端请求本应用的 /api/models 失败时显示的降级提示，不是因为没有创建自定义模型。固定模型仍然可以使用。通常检查：
 
-后续下一步是继续优化本地去水印效果，补充更多后端测试，并在需要发布时让 Go 后端直接托管 `dist/`。
+1. Go 后端是否已启动。
+2. 后端端口是否仍为 localhost:8080，是否与 vite.config.ts 一致。
+3. 浏览器访问 /api/models 是否返回 200。
+4. 当前运行的后端是否为最新构建版本。
+
+后端正常启动且数据库可读时，/api/models 会至少返回三个固定模型，即使没有任何自定义模型。
+
+### 自定义模型为什么提示“模型不可用”？
+
+自定义模型按当前中转站配置隔离。切换配置后，之前配置下添加的自定义模型不会出现在当前列表中；请在当前配置下重新添加，或使用固定模型。

@@ -10,12 +10,32 @@
     <title>img-app</title>
     <script>
       (() => {
+        const cookieKey = 'img-app.theme.v1'
+        const validTheme = (value) => value === 'light' || value === 'dark'
+
+        const readCookieTheme = () => {
+          try {
+            const value = document.cookie
+              .split('; ')
+              .find((item) => item.startsWith(`${cookieKey}=`))
+              ?.slice(cookieKey.length + 1)
+            return validTheme(value) ? value : null
+          } catch {
+            return null
+          }
+        }
+
+        let saved = null
         try {
-          const saved = localStorage.getItem('img-app.theme.v1')
-          const dark = saved === 'dark' || (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
-          document.documentElement.classList.toggle('dark', dark)
-          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-        } catch {}
+          saved = localStorage.getItem(cookieKey)
+        } catch {
+          // Try the cookie below when localStorage is unavailable.
+        }
+        if (!validTheme(saved)) saved = readCookieTheme()
+
+        const dark = saved === 'dark' || (!validTheme(saved) && matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.classList.toggle('dark', dark)
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
       })()
     </script>
   </head>

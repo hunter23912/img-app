@@ -6,10 +6,11 @@ import { ImageFormPanel } from './components/ImageFormPanel'
 import { ImageProfilesPage } from './components/ImageProfilesPage'
 import { ResultPanel } from './components/ResultPanel'
 import { StatusCard } from './components/StatusCard'
-import { defaultAspectRatio, defaultModel, defaultResolution, defaultSeedVRSize, getSeedVRTargetSize, getStandardImageSize, keepOriginalSize, seedVRModel } from './constants/image'
+import { defaultAspectRatio, defaultModel, defaultResolution, getStandardImageSize, keepOriginalSize } from './constants/image'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useImageHistory } from './hooks/useImageHistory'
 import { useImageProfiles } from './hooks/useImageProfiles'
+import { useImageModels } from './hooks/useImageModels'
 import { useSourceImagePreview } from './hooks/useSourceImagePreview'
 import { useTheme } from './hooks/useTheme'
 import type { AppTab, DownloadFormat, DownloadStage, ImageMode, MessageTone } from './types/image'
@@ -23,7 +24,6 @@ function App() {
   const [generateResolution, setGenerateResolution] = useState(defaultResolution)
   const [editAspectRatio, setEditAspectRatio] = useState(defaultAspectRatio)
   const [editResolution, setEditResolution] = useState(defaultResolution)
-  const [editSize, setEditSize] = useState(defaultSeedVRSize)
   const [resultImage, setResultImage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>('jpg')
@@ -52,6 +52,7 @@ function App() {
   const { sourceImage, sourcePreview, sourceSize, selectSourceImage } = useSourceImagePreview()
   const isSettingsBusy = isProfilesLoading
   const activeProfile = profiles.find((profile) => profile.is_active)
+  const { models, isLoading: isModelsLoading, isSaving: isModelsSaving, error: modelsError, add: addModel, remove: removeModel } = useImageModels(activeProfile?.id ?? '')
   const currentProfileName = isProfilesLoading ? '读取中' : activeProfile?.name || '默认配置'
   const generateSize = getStandardImageSize(generateAspectRatio, generateResolution)
 
@@ -78,10 +79,6 @@ function App() {
   }
 
   function handleModeChange(nextMode: ImageMode) {
-    if (nextMode === 'generate' && model === seedVRModel) {
-      setModel(defaultModel)
-      setEditSize(defaultSeedVRSize)
-    }
     setMode(nextMode)
   }
 
@@ -92,12 +89,11 @@ function App() {
 
   function handleModelChange(nextModel: string) {
     setModel(nextModel)
-    if (nextModel === seedVRModel) {
-      setEditSize(defaultSeedVRSize)
-    } else if (editSize.startsWith('seedvr-')) {
-      setEditSize(defaultSeedVRSize)
-    }
   }
+
+  const selectedModel = !isModelsLoading && models.some((option) => option.value === model)
+    ? model
+    : defaultModel
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -108,20 +104,8 @@ function App() {
       return
     }
 
-    if (mode === 'generate' && model === seedVRModel) {
-      setMessage('SeedVR2-7B 仅支持图编辑，请切换到图编辑模式并上传原图。')
-      setMessageTone('error')
-      return
-    }
-
     if (mode === 'edit' && !sourceImage) {
       setMessage('图编辑模式需要先上传一张原图。')
-      setMessageTone('error')
-      return
-    }
-
-    if (mode === 'edit' && model === seedVRModel && !sourceSize) {
-      setMessage('正在读取原图尺寸，请稍后再试。')
       setMessageTone('error')
       return
     }
@@ -135,7 +119,7 @@ function App() {
     try {
       const image =
         mode === 'generate'
-          ? await generateImage(prompt, generateSize, model)
+          ? await generateImage(prompt, generateSize, selectedModel)
           : await submitEditRequest()
 
       setResultImage(image)
@@ -156,13 +140,10 @@ function App() {
       throw new Error('图编辑模式需要先上传一张原图。')
     }
 
-    const size =
-      model === seedVRModel
-        ? getSeedVRTargetSize(sourceSize, editSize)
-        : editAspectRatio === keepOriginalSize
-          ? sourceSize
-          : getStandardImageSize(editAspectRatio, editResolution)
-    return editImage({ prompt, size, image: sourceImage, model })
+    const size = editAspectRatio === keepOriginalSize
+      ? sourceSize
+      : getStandardImageSize(editAspectRatio, editResolution)
+    return editImage({ prompt, size, image: sourceImage, model: selectedModel })
   }
 
   async function handleDownloadImage() {
@@ -256,22 +237,28 @@ function App() {
           <ImageFormPanel
             mode={mode}
             prompt={prompt}
-            model={model}
+            model={selectedModel}
+            modelOptions={models}
+            isModelsLoading={isModelsLoading}
+            isModelsSaving={isModelsSaving}
+            modelsError={modelsError}
             generateAspectRatio={generateAspectRatio}
             generateResolution={generateResolution}
             editAspectRatio={editAspectRatio}
             editResolution={editResolution}
-            editSize={editSize}
             sourcePreview={sourcePreview}
             isSubmitting={isSubmitting}
             isSettingsBusy={isSettingsBusy}
             onPromptChange={setPrompt}
             onModelChange={handleModelChange}
+            onAddModel={async (modelName) => addModel(modelName)}
+            onDeleteModel={async (id) => {
+              await removeModel(id)
+            }}
             onGenerateAspectRatioChange={setGenerateAspectRatio}
             onGenerateResolutionChange={setGenerateResolution}
             onEditAspectRatioChange={setEditAspectRatio}
             onEditResolutionChange={setEditResolution}
-            onEditSizeChange={setEditSize}
             onSourceImageChange={handleImageChange}
             onSubmit={handleSubmit}
           />

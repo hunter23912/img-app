@@ -22,9 +22,10 @@ export interface SizeOption {
 }
 
 export interface ModelOption {
+  id: string
   value: string
   label: string
-  editOnly?: boolean
+  built_in: boolean
 }
 
 export interface PromptPreset {

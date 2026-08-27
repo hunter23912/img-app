@@ -204,7 +204,7 @@ export function ResultPanel({
             )}
 
             <button
-              className="btn btn-primary min-h-12 w-full rounded-2xl font-black"
+              className="btn min-h-12 w-full rounded-2xl border border-slate-400/20 bg-[#7e57c2] font-black text-white shadow-[0_8px_18px_rgba(100,116,139,0.18)] transition hover:bg-[#673ab7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:bg-slate-300 dark:border-slate-500/30 dark:bg-slate-600 dark:text-slate-100 dark:hover:bg-slate-500 dark:focus-visible:ring-slate-500 dark:focus-visible:ring-offset-slate-900 dark:disabled:bg-slate-700"
               type="button"
               onClick={onDownload}
               disabled={isDownloading}
