@@ -1,6 +1,9 @@
 package httpapi
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 func normalizeImageRequest(input *generateRequest) {
 	input.Model = strings.TrimSpace(input.Model)
@@ -17,4 +20,24 @@ func normalizeImageRequest(input *generateRequest) {
 	if input.Quality == "" {
 		input.Quality = "auto"
 	}
+	if input.Moderation == "" {
+		input.Moderation = "auto"
+	}
+	if input.Background == "" {
+		input.Background = "auto"
+	}
+	if input.OutputFormat == "" {
+		input.OutputFormat = "png"
+	}
+	if input.N < 1 {
+		input.N = 1
+	}
+}
+
+func parsePositiveInt(value string) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 1 {
+		return 1
+	}
+	return parsed
 }

@@ -51,10 +51,14 @@ type imageProfilesResponse struct {
 }
 
 type generateRequest struct {
-	Model   string `json:"model"`
-	Prompt  string `json:"prompt"`
-	Size    string `json:"size"`
-	Quality string `json:"quality"`
+	Model        string `json:"model"`
+	Prompt       string `json:"prompt"`
+	Size         string `json:"size"`
+	Quality      string `json:"quality"`
+	Moderation   string `json:"moderation"`
+	Background   string `json:"background"`
+	OutputFormat string `json:"output_format"`
+	N            int    `json:"n"`
 }
 
 type imageResponse struct {

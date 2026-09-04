@@ -19,6 +19,7 @@ backend/data/
 *.db
 *.db-wal
 *.db-shm
+*.http
 
 # Editor directories and files
 .vscode/*

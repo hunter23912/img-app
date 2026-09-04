@@ -217,11 +217,11 @@ Content-Type: application/json
 
 ~~~json
 {
-  "image": "https://example.com/image.png"
+  "image": "/api/history/{taskID}/image"
 }
 ~~~
 
-中转站返回 b64_json 时，后端会转换为 data URL。成功结果会写入 SQLite 历史记录；外部 URL 会加入后端信任列表，供下载接口校验。
+中转站返回 b64_json 或图片 URL 时，后端都会统一转换为 data URL。启用 SQLite 时，成功结果会写入历史记录并返回 `/api/history/{taskID}/image`；未启用 SQLite 时直接返回 data URL。
 
 ### 图编辑
 
@@ -238,6 +238,9 @@ Content-Type: multipart/form-data
 | prompt | 是 | 编辑要求 |
 | size | 否 | 输出尺寸；网页选择“原图”时使用原图尺寸 |
 | quality | 否 | 当前网页传 auto |
+| moderation | 否 | 内容审核级别，默认 auto |
+| output_format | 否 | 输出格式，默认 png |
+| n | 否 | 生成数量，默认 1 |
 | image | 是 | 原图文件 |
 | mask | 否 | 可选遮罩文件，供 API 调用者使用 |
 
@@ -260,7 +263,7 @@ limit 范围为 1-5，不传时为 5。返回格式：
 }
 ~~~
 
-中转站返回的 HTTPS 图片保存为 URL；返回 base64 图片时，历史列表中的 image 会指向 /api/history/{taskID}/image，避免一次性把多个大图放进分页响应。
+中转站返回的图片 URL 会由后端下载并转换为 data URL；返回 base64 图片时也会统一保存为 data URL。历史列表中的 image 会指向 `/api/history/{taskID}/image`，避免一次性把大图放进分页响应。
 
 ### 图片下载
 

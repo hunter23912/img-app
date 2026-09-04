@@ -217,6 +217,10 @@ export async function generateImage(prompt: string, size: string, model = defaul
         prompt,
         size,
         quality: 'auto',
+        background: 'auto',
+        moderation: 'auto',
+        output_format: 'png',
+        n: 1,
       }),
     },
     imageRequestTimeoutMs,
@@ -236,6 +240,9 @@ export async function editImage(input: {
   formData.append('model', input.model ?? defaultModel)
   formData.append('prompt', input.prompt)
   formData.append('quality', 'auto')
+  formData.append('moderation', 'auto')
+  formData.append('output_format', 'png')
+  formData.append('n', '1')
   formData.append('image', input.image)
 
   if (input.size) {

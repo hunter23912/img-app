@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -22,6 +23,16 @@ type testRelayImageResponse struct {
 type testRelayImage struct {
 	URL     string `json:"url,omitempty"`
 	B64JSON string `json:"b64_json,omitempty"`
+}
+
+const testPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+func testPNGBytes() []byte {
+	imageBytes, err := base64.StdEncoding.DecodeString(testPNGBase64)
+	if err != nil {
+		panic(err)
+	}
+	return imageBytes
 }
 
 func TestImageSettingsHandlerReturnsEffectiveValuesAndValidatesEndpoint(t *testing.T) {
@@ -130,14 +141,20 @@ func TestHealthAndSettingsWorkWithoutAPIKey(t *testing.T) {
 
 func TestGenerateUsesSavedImageSettings(t *testing.T) {
 	const savedKey = "saved-key"
-	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var relay *httptest.Server
+	relay = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/generated.png" {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(testPNGBytes())
+			return
+		}
 		if r.URL.Path != "/v1/images/generations" {
 			t.Fatalf("relay path = %q, want /v1/images/generations", r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer "+savedKey {
 			t.Fatalf("relay authorization = %q, want saved key", r.Header.Get("Authorization"))
 		}
-		writeJSON(w, http.StatusOK, testRelayImageResponse{Data: []testRelayImage{{URL: "https://images.example.com/saved.png"}}})
+		writeJSON(w, http.StatusOK, testRelayImageResponse{Data: []testRelayImage{{URL: relay.URL + "/generated.png"}}})
 	}))
 	defer relay.Close()
 
@@ -166,14 +183,20 @@ func TestGenerateUsesSavedImageSettings(t *testing.T) {
 
 func TestEditUsesSavedImageSettings(t *testing.T) {
 	const savedKey = "saved-edit-key"
-	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var relay *httptest.Server
+	relay = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/edited.png" {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(testPNGBytes())
+			return
+		}
 		if r.URL.Path != "/v1/images/edits" {
 			t.Fatalf("relay path = %q, want /v1/images/edits", r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer "+savedKey {
 			t.Fatalf("relay authorization = %q, want saved key", r.Header.Get("Authorization"))
 		}
-		writeJSON(w, http.StatusOK, testRelayImageResponse{Data: []testRelayImage{{URL: "https://images.example.com/edited.png"}}})
+		writeJSON(w, http.StatusOK, testRelayImageResponse{Data: []testRelayImage{{URL: relay.URL + "/edited.png"}}})
 	}))
 	defer relay.Close()
 

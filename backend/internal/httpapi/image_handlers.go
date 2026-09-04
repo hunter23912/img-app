@@ -73,7 +73,16 @@ func generateHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 		slog.Info("image generate requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt))
-		image, err := provider.CallGenerate(generateURL, settings.APIKey, provider.ImageRequest(input))
+		image, err := provider.CallGenerate(generateURL, settings.APIKey, provider.ImageRequest{
+			Model:        input.Model,
+			Prompt:       input.Prompt,
+			Size:         input.Size,
+			Quality:      input.Quality,
+			Moderation:   input.Moderation,
+			Background:   input.Background,
+			OutputFormat: input.OutputFormat,
+			N:            input.N,
+		})
 		if err != nil {
 			slog.Error("image generate failed", "error", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
@@ -81,7 +90,12 @@ func generateHandler(config appConfig) http.HandlerFunc {
 		}
 		displayImage := image
 		if config.Database != nil {
-			taskID, createErr := config.Database.CreateTask("generate", store.ImageTaskInput(input))
+			taskID, createErr := config.Database.CreateTask("generate", store.ImageTaskInput{
+				Model:   input.Model,
+				Prompt:  input.Prompt,
+				Size:    input.Size,
+				Quality: input.Quality,
+			})
 			if createErr != nil {
 				slog.Error("create image task failed", "error", createErr)
 			} else if completeErr := config.Database.CompleteTask(taskID, image); completeErr != nil {
@@ -123,10 +137,14 @@ func editHandler(config appConfig) http.HandlerFunc {
 		}
 
 		input := generateRequest{
-			Model:   strings.TrimSpace(r.FormValue("model")),
-			Prompt:  strings.TrimSpace(r.FormValue("prompt")),
-			Size:    strings.TrimSpace(r.FormValue("size")),
-			Quality: strings.TrimSpace(r.FormValue("quality")),
+			Model:        strings.TrimSpace(r.FormValue("model")),
+			Prompt:       strings.TrimSpace(r.FormValue("prompt")),
+			Size:         strings.TrimSpace(r.FormValue("size")),
+			Quality:      strings.TrimSpace(r.FormValue("quality")),
+			Moderation:   strings.TrimSpace(r.FormValue("moderation")),
+			Background:   strings.TrimSpace(r.FormValue("background")),
+			OutputFormat: strings.TrimSpace(r.FormValue("output_format")),
+			N:            parsePositiveInt(r.FormValue("n")),
 		}
 
 		normalizeImageRequest(&input)
@@ -164,7 +182,16 @@ func editHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 		slog.Info("image edit requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt), "image", imageHeader.Filename, "has_mask", maskFile != nil)
-		image, err := provider.CallEdit(editURL, settings.APIKey, provider.ImageRequest(input), imageFile, imageHeader, maskFile, maskHeader)
+		image, err := provider.CallEdit(editURL, settings.APIKey, provider.ImageRequest{
+			Model:        input.Model,
+			Prompt:       input.Prompt,
+			Size:         input.Size,
+			Quality:      input.Quality,
+			Moderation:   input.Moderation,
+			Background:   input.Background,
+			OutputFormat: input.OutputFormat,
+			N:            input.N,
+		}, imageFile, imageHeader, maskFile, maskHeader)
 		if err != nil {
 			slog.Error("image edit failed", "error", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
@@ -172,7 +199,12 @@ func editHandler(config appConfig) http.HandlerFunc {
 		}
 		displayImage := image
 		if config.Database != nil {
-			taskID, createErr := config.Database.CreateTask("edit", store.ImageTaskInput(input))
+			taskID, createErr := config.Database.CreateTask("edit", store.ImageTaskInput{
+				Model:   input.Model,
+				Prompt:  input.Prompt,
+				Size:    input.Size,
+				Quality: input.Quality,
+			})
 			if createErr != nil {
 				slog.Error("create image task failed", "error", createErr)
 			} else if completeErr := config.Database.CompleteTask(taskID, image); completeErr != nil {
