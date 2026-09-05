@@ -87,9 +87,27 @@ func callRelayEditWithContext(
 	maskHeader *multipart.FileHeader,
 	onEvent ImageEventHandler,
 ) (string, error) {
+	return callRelayEditImagesWithContext(ctx, editURL, apiKey, input, []ImageFile{{File: imageFile, Header: imageHeader}}, maskFile, maskHeader, onEvent)
+}
+
+func callRelayEditImagesWithContext(
+	ctx context.Context,
+	editURL string,
+	apiKey string,
+	input ImageRequest,
+	images []ImageFile,
+	maskFile multipart.File,
+	maskHeader *multipart.FileHeader,
+	onEvent ImageEventHandler,
+) (string, error) {
 	input = normalizeImageRequest(input)
-	if imageFile == nil || imageHeader == nil {
+	if len(images) == 0 {
 		return "", fmt.Errorf("input image is required")
+	}
+	for _, image := range images {
+		if image.File == nil || image.Header == nil {
+			return "", fmt.Errorf("input image is required")
+		}
 	}
 
 	var body bytes.Buffer
@@ -104,7 +122,7 @@ func callRelayEditWithContext(
 	}
 	for name, value := range map[string]string{
 		"model":         input.Model,
-		"prompt":        input.Prompt,
+		"prompt":        editPrompt(input.Prompt, len(images)),
 		"size":          input.Size,
 		"quality":       input.Quality,
 		"moderation":    input.Moderation,
@@ -119,8 +137,10 @@ func callRelayEditWithContext(
 			return "", fmt.Errorf("write n field: %w", err)
 		}
 	}
-	if err := copyMultipartFile(writer, "image[]", imageHeader.Filename, imageHeader.Header.Get("Content-Type"), imageFile); err != nil {
-		return "", err
+	for _, image := range images {
+		if err := copyMultipartFile(writer, "image[]", image.Header.Filename, image.Header.Header.Get("Content-Type"), image.File); err != nil {
+			return "", err
+		}
 	}
 	if maskFile != nil && maskHeader != nil {
 		if err := copyMultipartFile(writer, "mask", maskHeader.Filename, maskHeader.Header.Get("Content-Type"), maskFile); err != nil {
@@ -132,6 +152,20 @@ func callRelayEditWithContext(
 	}
 
 	return callRelayBodyWithContext(ctx, editURL, apiKey, &body, writer.FormDataContentType(), input.OutputFormat, "edit", onEvent)
+}
+
+func editPrompt(prompt string, imageCount int) string {
+	if imageCount < 2 {
+		return prompt
+	}
+	var mapping strings.Builder
+	mapping.WriteString(prompt)
+	mapping.WriteString("\n\n图片引用说明：@1 为主图")
+	for index := 2; index <= imageCount; index++ {
+		mapping.WriteString(fmt.Sprintf("；@%d 为第 %d 张参考图", index, index))
+	}
+	mapping.WriteString("。请优先按照提示词中明确指定的 @编号使用对应图片。")
+	return mapping.String()
 }
 
 func callRelayEdit(

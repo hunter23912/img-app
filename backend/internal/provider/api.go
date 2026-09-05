@@ -5,6 +5,11 @@ import (
 	"mime/multipart"
 )
 
+type ImageFile struct {
+	File   multipart.File
+	Header *multipart.FileHeader
+}
+
 func BuildImagesURL(endpoint, action string) (string, error) {
 	return buildImagesURL(endpoint, action)
 }
@@ -24,5 +29,9 @@ func CallEdit(
 	maskHeader *multipart.FileHeader,
 	onEvent ImageEventHandler,
 ) (string, error) {
-	return callRelayEditWithContext(ctx, editURL, apiKey, input, imageFile, imageHeader, maskFile, maskHeader, onEvent)
+	return CallEditImages(ctx, editURL, apiKey, input, []ImageFile{{File: imageFile, Header: imageHeader}}, maskFile, maskHeader, onEvent)
+}
+
+func CallEditImages(ctx context.Context, editURL, apiKey string, input ImageRequest, images []ImageFile, maskFile multipart.File, maskHeader *multipart.FileHeader, onEvent ImageEventHandler) (string, error) {
+	return callRelayEditImagesWithContext(ctx, editURL, apiKey, input, images, maskFile, maskHeader, onEvent)
 }

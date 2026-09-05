@@ -233,7 +233,7 @@ export async function generateImage(prompt: string, size: string, model = defaul
 export async function editImage(input: {
   prompt: string
   size: string
-  image: File
+  images: File[]
   model?: string
   onPartialImage?: ImagePartialCallback
 }) {
@@ -244,7 +244,9 @@ export async function editImage(input: {
   formData.append('moderation', 'auto')
   formData.append('output_format', 'png')
   formData.append('n', '1')
-  formData.append('image', input.image)
+  for (const image of input.images) {
+    formData.append('image', image)
+  }
 
   if (input.size) {
     formData.append('size', input.size)

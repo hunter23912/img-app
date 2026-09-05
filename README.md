@@ -276,10 +276,10 @@ Content-Type: multipart/form-data
 | moderation | 否 | 内容审核级别，默认 auto |
 | output_format | 否 | 输出格式，默认 png |
 | n | 否 | 生成数量，默认 1 |
-| image | 是 | 原图文件 |
+| image | 是 | 图片文件；可重复提交多张，第一张为主图，其余为参考图，网页最多 4 张 |
 | mask | 否 | 遮罩文件 |
 
-手机到 Go 后端使用 multipart 上传，Go 再按 Playground 和 OpenAI Images API 的传统编辑方式，以 multipart 转发到中转站的 `/v1/images/edits` 或 `/v1/images/edits/async`：原图字段为 `image[]`，遮罩字段为 `mask`。异步编辑创建成功后仍使用同一个任务查询接口轮询；原图不会写入 SQLite，也不需要 `APP_PUBLIC_URL` 或公网 URL。
+手机到 Go 后端使用 multipart 上传，Go 再按 Playground 和 OpenAI Images API 的传统编辑方式，以 multipart 转发到中转站的 `/v1/images/edits` 或 `/v1/images/edits/async`：图片字段可重复提交，后端按顺序转发为 `image[]`，第一张是主图，其余是参考图；遮罩字段为 `mask`。提示词中的 `@1`、`@2` 等编号对应图片顺序，网页输入 `@` 时会提供图片补全。异步编辑创建成功后仍使用同一个任务查询接口轮询；原图不会写入 SQLite，也不需要 `APP_PUBLIC_URL` 或公网 URL。
 
 ### 历史记录
 

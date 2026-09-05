@@ -135,6 +135,75 @@ func TestCallRelayEditUsesMultipartFiles(t *testing.T) {
 	}
 }
 
+func TestCallRelayEditUsesMultipleMultipartFilesInOrder(t *testing.T) {
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse multipart request: %v", err)
+			return
+		}
+		files := r.MultipartForm.File["image[]"]
+		if len(files) != 2 {
+			t.Errorf("image files = %d, want 2", len(files))
+			return
+		}
+		for index, fileHeader := range files {
+			file, err := fileHeader.Open()
+			if err != nil {
+				t.Errorf("open image file %d: %v", index, err)
+				continue
+			}
+			imageBytes, readErr := io.ReadAll(file)
+			_ = file.Close()
+			want := []byte{byte(index + 1), byte(index + 2), byte(index + 3)}
+			if readErr != nil || !bytes.Equal(imageBytes, want) {
+				t.Errorf("image %d bytes = %v, error = %v, want %v", index, imageBytes, readErr, want)
+			}
+		}
+		if r.FormValue("prompt") != "Use @2 for the color and @3 for the shape.\n\n图片引用说明：@1 为主图；@2 为第 2 张参考图。请优先按照提示词中明确指定的 @编号使用对应图片。" {
+			t.Errorf("prompt = %q", r.FormValue("prompt"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"url":"https://images.example.com/multi-edited.png"}]}`))
+	}))
+	defer relay.Close()
+
+	paths := []string{
+		filepath.Join(t.TempDir(), "main.png"),
+		filepath.Join(t.TempDir(), "reference.png"),
+	}
+	for index, path := range paths {
+		if err := os.WriteFile(path, []byte{byte(index + 1), byte(index + 2), byte(index + 3)}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := make([]ImageFile, 0, len(paths))
+	opened := make([]*os.File, 0, len(paths))
+	for _, path := range paths {
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opened = append(opened, file)
+		files = append(files, ImageFile{
+			File:   file,
+			Header: &multipart.FileHeader{Filename: filepath.Base(path), Header: textproto.MIMEHeader{"Content-Type": []string{"image/png"}}},
+		})
+	}
+	defer func() {
+		for _, file := range opened {
+			_ = file.Close()
+		}
+	}()
+
+	image, err := callRelayEditImagesWithContext(context.Background(), relay.URL+"/v1/images/edits", "test-key", ImageRequest{Model: defaultModel, Prompt: "Use @2 for the color and @3 for the shape."}, files, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("callRelayEditImagesWithContext() error = %v", err)
+	}
+	if image != "https://images.example.com/multi-edited.png" {
+		t.Fatalf("image = %q, want URL result", image)
+	}
+}
+
 func testPNGBytesForProvider() []byte {
 	imageBytes, err := base64.StdEncoding.DecodeString(testPNGBase64)
 	if err != nil {

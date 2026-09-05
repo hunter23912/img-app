@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +20,10 @@ import (
 const (
 	maxInputImageBytes    = 50 * 1024 * 1024
 	maxEditMultipartBytes = maxInputImageBytes + 2*1024*1024
+	maxEditImages         = 4
 )
+
+var imageReferencePattern = regexp.MustCompile(`@([0-9]+)`)
 
 func healthHandler(config appConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -128,12 +133,36 @@ func editHandler(config appConfig) http.HandlerFunc {
 		if !validateImageInput(w, config, input) {
 			return
 		}
-		imageFile, imageHeader, err := r.FormFile("image")
-		if err != nil {
+		imageHeaders := r.MultipartForm.File["image"]
+		if len(imageHeaders) == 0 {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "image file is required"})
 			return
 		}
-		defer imageFile.Close()
+		if len(imageHeaders) > maxEditImages {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "最多上传 " + strconv.Itoa(maxEditImages) + " 张图片"})
+			return
+		}
+		if referenceError := validateImageReferences(input.Prompt, len(imageHeaders)); referenceError != "" {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: referenceError})
+			return
+		}
+		images := make([]provider.ImageFile, 0, len(imageHeaders))
+		for _, imageHeader := range imageHeaders {
+			imageFile, openErr := imageHeader.Open()
+			if openErr != nil {
+				for _, opened := range images {
+					_ = opened.File.Close()
+				}
+				writeJSON(w, http.StatusBadRequest, errorResponse{Error: "无法读取图片文件"})
+				return
+			}
+			images = append(images, provider.ImageFile{File: imageFile, Header: imageHeader})
+		}
+		defer func() {
+			for _, image := range images {
+				_ = image.File.Close()
+			}
+		}()
 		var maskFile multipart.File
 		var maskHeader *multipart.FileHeader
 		maskFile, maskHeader, _ = r.FormFile("mask")
@@ -153,8 +182,8 @@ func editHandler(config appConfig) http.HandlerFunc {
 			writeImageEvent(w, "image_edit.started", "", "")
 		}
 		onEvent := imageEventCallback(w, stream, "image_edit")
-		slog.Info("image edit requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt), "image", imageHeader.Filename, "has_mask", maskFile != nil)
-		image, err := provider.CallEdit(r.Context(), editURL, settings.APIKey, provider.ImageRequest{
+		slog.Info("image edit requested", "model", input.Model, "size", input.Size, "quality", input.Quality, "prompt_chars", len(input.Prompt), "images", len(images), "has_mask", maskFile != nil)
+		image, err := provider.CallEditImages(r.Context(), editURL, settings.APIKey, provider.ImageRequest{
 			Model:        input.Model,
 			Prompt:       input.Prompt,
 			Size:         input.Size,
@@ -163,7 +192,7 @@ func editHandler(config appConfig) http.HandlerFunc {
 			Background:   input.Background,
 			OutputFormat: input.OutputFormat,
 			N:            input.N,
-		}, imageFile, imageHeader, maskFile, maskHeader, onEvent)
+		}, images, maskFile, maskHeader, onEvent)
 		if err != nil {
 			slog.Error("image edit failed", "error", err)
 			if stream {
@@ -221,6 +250,28 @@ func validateImageInput(w http.ResponseWriter, config appConfig, input generateR
 		return false
 	}
 	return true
+}
+
+func validateImageReferences(prompt string, imageCount int) string {
+	for _, indexes := range imageReferencePattern.FindAllStringSubmatchIndex(prompt, -1) {
+		start, end := indexes[0], indexes[1]
+		if start > 0 && isImageReferenceWordCharacter(prompt[start-1]) {
+			continue
+		}
+		if end < len(prompt) && isImageReferenceWordCharacter(prompt[end]) {
+			continue
+		}
+		numberText := prompt[indexes[2]:indexes[3]]
+		number, err := strconv.Atoi(numberText)
+		if err != nil || number < 1 || number > imageCount {
+			return "图片引用 @" + numberText + " 无效，请使用 @1 到 @" + strconv.Itoa(imageCount) + "。"
+		}
+	}
+	return ""
+}
+
+func isImageReferenceWordCharacter(value byte) bool {
+	return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9') || value == '_'
 }
 
 func persistImageResult(config appConfig, mode string, input generateRequest, image string) string {

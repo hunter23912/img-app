@@ -14,6 +14,7 @@ import { useImageModels } from './hooks/useImageModels'
 import { useSourceImagePreview } from './hooks/useSourceImagePreview'
 import { useTheme } from './hooks/useTheme'
 import type { AppTab, DownloadFormat, DownloadStage, ImageMode, MessageTone } from './types/image'
+import { validateImageReferences } from './utils/imageReferences'
 
 function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('image')
@@ -49,7 +50,7 @@ function App() {
     removeTask,
   } =
     useImageHistory()
-  const { sourceImage, sourcePreview, sourceSize, selectSourceImage } = useSourceImagePreview()
+  const { sourceImages, selectMainImage, addReferenceImages, removeSourceImage } = useSourceImagePreview()
   const isSettingsBusy = isProfilesLoading
   const activeProfile = profiles.find((profile) => profile.is_active)
   const { models, isLoading: isModelsLoading, isSaving: isModelsSaving, error: modelsError, add: addModel, remove: removeModel } = useImageModels(activeProfile?.id ?? '')
@@ -72,9 +73,15 @@ function App() {
   const latestHistoryImage = history.find((task) => task.status === 'succeeded' && Boolean(task.image))?.image ?? ''
   const currentResultImage = resultImage || (resultWasCleared ? '' : latestHistoryImage)
 
-  function handleImageChange(file: File | null) {
+  function handleMainImageChange(file: File | null) {
     setResultWasCleared(true)
-    selectSourceImage(file)
+    selectMainImage(file)
+    setResultImage('')
+  }
+
+  function handleReferenceImagesChange(files: File[]) {
+    setResultWasCleared(true)
+    addReferenceImages(files)
     setResultImage('')
   }
 
@@ -104,10 +111,19 @@ function App() {
       return
     }
 
-    if (mode === 'edit' && !sourceImage) {
+    if (mode === 'edit' && sourceImages.length === 0) {
       setMessage('图编辑模式需要先上传一张原图。')
       setMessageTone('error')
       return
+    }
+
+    if (mode === 'edit') {
+      const referenceError = validateImageReferences(prompt, sourceImages.length)
+      if (referenceError) {
+        setMessage(referenceError)
+        setMessageTone('error')
+        return
+      }
     }
 
     setIsSubmitting(true)
@@ -144,14 +160,14 @@ function App() {
   }
 
   async function submitEditRequest(onPartialImage: (image: string) => void) {
-    if (!sourceImage) {
+    if (sourceImages.length === 0) {
       throw new Error('图编辑模式需要先上传一张原图。')
     }
 
     const size = editAspectRatio === keepOriginalSize
-      ? sourceSize
+      ? sourceImages[0].size
       : getStandardImageSize(editAspectRatio, editResolution)
-    return editImage({ prompt, size, image: sourceImage, model: selectedModel, onPartialImage })
+    return editImage({ prompt, size, images: sourceImages.map((sourceImage) => sourceImage.file), model: selectedModel, onPartialImage })
   }
 
   async function handleDownloadImage() {
@@ -254,7 +270,7 @@ function App() {
             generateResolution={generateResolution}
             editAspectRatio={editAspectRatio}
             editResolution={editResolution}
-            sourcePreview={sourcePreview}
+            sourceImages={sourceImages}
             isSubmitting={isSubmitting}
             isSettingsBusy={isSettingsBusy}
             onPromptChange={setPrompt}
@@ -267,7 +283,13 @@ function App() {
             onGenerateResolutionChange={setGenerateResolution}
             onEditAspectRatioChange={setEditAspectRatio}
             onEditResolutionChange={setEditResolution}
-            onSourceImageChange={handleImageChange}
+            onMainImageChange={handleMainImageChange}
+            onReferenceImagesChange={handleReferenceImagesChange}
+            onRemoveSourceImage={(id) => {
+              setResultWasCleared(true)
+              removeSourceImage(id)
+              setResultImage('')
+            }}
             onSubmit={handleSubmit}
           />
 

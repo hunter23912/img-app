@@ -66,6 +66,13 @@ export interface ImageResponse {
   error?: string
 }
 
+export interface SourceImage {
+  id: string
+  file: File
+  preview: string
+  size: string
+}
+
 export interface ImageTask {
 	id: string
 	mode: ImageMode
