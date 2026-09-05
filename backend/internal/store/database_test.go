@@ -10,6 +10,43 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func TestImageCacheMigrationPreservesVersion4History(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "version4.db")
+	db, err := openDatabase(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := db.createTask("edit", ImageTaskInput{Prompt: "legacy image"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "https://images.example.com/legacy.png"
+	if err := db.completeTask(id, source); err != nil {
+		t.Fatal(err)
+	}
+	before, err := db.listTasks(5, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`ALTER TABLE image_tasks DROP COLUMN source_url; DELETE FROM schema_migrations WHERE version = 5`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	db, err = openDatabase(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	after, err := db.listTasks(5, "")
+	if err != nil || len(after.Tasks) != 1 || after.Tasks[0].ID != id || after.Tasks[0].Image != source || after.Tasks[0].CreatedAt != before.Tasks[0].CreatedAt {
+		t.Fatalf("migration changed history: %#v %v", after, err)
+	}
+	var version int
+	if err := db.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
+		t.Fatalf("version = %d, err = %v", version, err)
+	}
+}
+
 func TestDatabaseSeedsAndPersistsData(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "img-app.db")
 	database, err := openDatabase(path)
@@ -145,6 +182,7 @@ func TestDatabaseMigratesLegacyImageSettingsToActiveProfile(t *testing.T) {
 		CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 		INSERT INTO schema_migrations (version, applied_at) VALUES (1, '2026-01-01T00:00:00Z'), (2, '2026-01-01T00:00:00Z');
 		CREATE TABLE image_settings (id INTEGER PRIMARY KEY CHECK (id = 1), endpoint TEXT NOT NULL DEFAULT '', api_key TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);
+		CREATE TABLE image_tasks (id TEXT PRIMARY KEY, image_url TEXT NOT NULL DEFAULT '');
 		INSERT INTO image_settings (id, endpoint, api_key, updated_at) VALUES (1, 'https://legacy.example', 'legacy-key', '2026-01-02T00:00:00Z');
 	`)
 	if err != nil {

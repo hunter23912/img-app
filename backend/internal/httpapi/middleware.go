@@ -30,6 +30,15 @@ type responseRecorder struct {
 	bytes      int
 }
 
+func (r *responseRecorder) Flush() {
+	if r.statusCode == 0 {
+		r.WriteHeader(http.StatusOK)
+	}
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func (r *responseRecorder) WriteHeader(statusCode int) {
 	r.statusCode = statusCode
 	r.ResponseWriter.WriteHeader(statusCode)

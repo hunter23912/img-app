@@ -119,8 +119,16 @@ function App() {
     try {
       const image =
         mode === 'generate'
-          ? await generateImage(prompt, generateSize, selectedModel)
-          : await submitEditRequest()
+          ? await generateImage(prompt, generateSize, selectedModel, (partialImage) => {
+              setResultImage(partialImage)
+              setMessage('正在接收图片预览...')
+              setMessageTone('info')
+            })
+          : await submitEditRequest((partialImage) => {
+              setResultImage(partialImage)
+              setMessage('正在接收图片预览...')
+              setMessageTone('info')
+            })
 
       setResultImage(image)
       void refreshHistory()
@@ -135,7 +143,7 @@ function App() {
     }
   }
 
-  async function submitEditRequest() {
+  async function submitEditRequest(onPartialImage: (image: string) => void) {
     if (!sourceImage) {
       throw new Error('图编辑模式需要先上传一张原图。')
     }
@@ -143,7 +151,7 @@ function App() {
     const size = editAspectRatio === keepOriginalSize
       ? sourceSize
       : getStandardImageSize(editAspectRatio, editResolution)
-    return editImage({ prompt, size, image: sourceImage, model: selectedModel })
+    return editImage({ prompt, size, image: sourceImage, model: selectedModel, onPartialImage })
   }
 
   async function handleDownloadImage() {

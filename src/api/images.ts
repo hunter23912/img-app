@@ -14,8 +14,10 @@ import type {
 
 const healthTimeoutMs = 5_000
 const historyTimeoutMs = 10_000
-const imageRequestTimeoutMs = 345_000
-const downloadTimeoutMs = 45_000
+const imageRequestTimeoutMs = 600_000
+const downloadTimeoutMs = 6 * 60_000
+
+type ImagePartialCallback = (image: string) => void
 
 export async function fetchImageModels(): Promise<ModelOption[]> {
   const response = await fetchWithTimeout('/api/models', undefined, healthTimeoutMs, '模型列表读取超时。')
@@ -204,8 +206,8 @@ async function parseImageProfileResponse(response: Response): Promise<ImageProfi
   return data
 }
 
-export async function generateImage(prompt: string, size: string, model = defaultModel) {
-  const response = await fetchWithTimeout(
+export async function generateImage(prompt: string, size: string, model = defaultModel, onPartialImage?: ImagePartialCallback) {
+  return requestImage(
     '/api/generate',
     {
       method: 'POST',
@@ -223,11 +225,9 @@ export async function generateImage(prompt: string, size: string, model = defaul
         n: 1,
       }),
     },
-    imageRequestTimeoutMs,
     '图片生成超时，请稍后重试。',
+    onPartialImage,
   )
-
-  return parseImageResponse(response)
 }
 
 export async function editImage(input: {
@@ -235,6 +235,7 @@ export async function editImage(input: {
   size: string
   image: File
   model?: string
+  onPartialImage?: ImagePartialCallback
 }) {
   const formData = new FormData()
   formData.append('model', input.model ?? defaultModel)
@@ -249,17 +250,15 @@ export async function editImage(input: {
     formData.append('size', input.size)
   }
 
-  const response = await fetchWithTimeout(
+  return requestImage(
     '/api/edit',
     {
       method: 'POST',
       body: formData,
     },
-    imageRequestTimeoutMs,
     '图片编辑超时，请稍后重试。',
+    input.onPartialImage,
   )
-
-  return parseImageResponse(response)
 }
 
 export async function fetchImageHistory(cursor = ''): Promise<HistoryPage> {
@@ -343,7 +342,15 @@ export async function downloadImage(input: {
   format: DownloadFormat
   quality: number
 }) {
-  const response = await fetchWithTimeout(
+	if (/^https:\/\//i.test(input.source)) {
+		try {
+			return await downloadExternalImage(input)
+		} catch (error) {
+			// 没有 CORS、跨域读取失败或 CDN 不支持浏览器下载时，回退到 Go 后端。
+			if (!(error instanceof TypeError)) throw error
+		}
+	}
+	const response = await fetchWithTimeout(
     '/api/download/image',
     {
       method: 'POST',
@@ -366,7 +373,65 @@ export async function downloadImage(input: {
   }
 }
 
-async function parseImageResponse(response: Response) {
+async function downloadExternalImage(input: { source: string; format: DownloadFormat; quality: number }) {
+	const controller = new AbortController()
+	const timeout = window.setTimeout(() => controller.abort(), downloadTimeoutMs)
+	try {
+		const response = await fetch(input.source, { signal: controller.signal, cache: 'force-cache' })
+		if (!response.ok) throw new TypeError(`external image returned ${response.status}`)
+		const blob = await response.blob()
+		if (input.format === 'png') {
+			return { response: new Response(blob, { headers: { 'Content-Type': 'image/png', 'Content-Disposition': 'attachment; filename="gpt-image.png"' } }), filename: 'gpt-image.png' }
+		}
+		const bitmap = await createImageBitmap(blob)
+		const canvas = document.createElement('canvas')
+		canvas.width = bitmap.width
+		canvas.height = bitmap.height
+		const ctx = canvas.getContext('2d')
+		if (!ctx) throw new TypeError('canvas is unavailable')
+		ctx.fillStyle = '#fff'
+		ctx.fillRect(0, 0, canvas.width, canvas.height)
+		ctx.drawImage(bitmap, 0, 0)
+		bitmap.close()
+		const jpg = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new TypeError('JPG conversion failed')), 'image/jpeg', input.quality / 100))
+		return { response: new Response(jpg, { headers: { 'Content-Type': 'image/jpeg', 'Content-Disposition': 'attachment; filename="gpt-image.jpg"' } }), filename: 'gpt-image.jpg' }
+	} finally {
+		window.clearTimeout(timeout)
+	}
+}
+
+async function requestImage(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMessage: string,
+  onPartialImage?: ImagePartialCallback,
+) {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), imageRequestTimeoutMs)
+
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal, cache: 'no-store' })
+    return await parseImageResponse(response, onPartialImage)
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(timeoutMessage, { cause: error })
+    }
+
+    if (error instanceof TypeError) {
+      throw new Error('无法连接服务器，请检查网络或后端服务。', { cause: error })
+    }
+
+    throw error instanceof Error ? error : new Error('请求未能完成，请稍后重试。', { cause: error })
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+async function parseImageResponse(response: Response, onPartialImage?: ImagePartialCallback) {
+  if (response.headers.get('Content-Type')?.toLowerCase().includes('text/event-stream')) {
+    return readImageStream(response, onPartialImage)
+  }
+
   let data: ImageResponse
   try {
     data = (await response.json()) as ImageResponse
@@ -383,6 +448,90 @@ async function parseImageResponse(response: Response) {
   }
 
   return data.image
+}
+
+async function readImageStream(response: Response, onPartialImage?: ImagePartialCallback) {
+  if (!response.body) throw new Error('图片服务未返回可读取的流式响应。')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let completedImage = ''
+  let sawEvent = false
+
+  const processBlock = (block: string) => {
+    const data = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).replace(/^ /, ''))
+      .join('\n')
+      .trim()
+    if (!data || data === '[DONE]') return false
+
+    sawEvent = true
+    let event: { type?: unknown; image?: unknown; b64_json?: unknown; partial_image_b64?: unknown; error?: unknown }
+    try {
+      event = JSON.parse(data) as typeof event
+    } catch {
+      throw new Error('图片流响应格式无效。')
+    }
+
+    const type = typeof event.type === 'string' ? event.type : ''
+    const partial = typeof event.image === 'string'
+      ? event.image
+      : typeof event.b64_json === 'string'
+        ? `data:image/png;base64,${event.b64_json}`
+        : typeof event.partial_image_b64 === 'string'
+          ? `data:image/png;base64,${event.partial_image_b64}`
+          : ''
+    if (type.includes('partial_image') && partial) {
+      onPartialImage?.(partial)
+      return false
+    }
+
+    if (type.endsWith('.failed') || type.endsWith('.error')) {
+      const error = typeof event.error === 'string'
+        ? event.error
+        : event.error && typeof event.error === 'object' && 'message' in event.error && typeof event.error.message === 'string'
+          ? event.error.message
+          : '图片流请求失败。'
+      throw new Error(error)
+    }
+
+    if (type.endsWith('.completed') && typeof event.image === 'string' && event.image) {
+      completedImage = event.image
+      return true
+    }
+    return false
+  }
+
+  try {
+    while (!completedImage) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      let separator = buffer.search(/\r?\n\r?\n/)
+      while (separator >= 0) {
+        const match = buffer.match(/\r?\n\r?\n/)
+        const block = buffer.slice(0, separator)
+        buffer = buffer.slice(separator + (match?.[0].length ?? 2))
+        if (processBlock(block)) break
+        separator = buffer.search(/\r?\n\r?\n/)
+      }
+    }
+
+    if (!completedImage) {
+      buffer += decoder.decode()
+      if (buffer.trim()) processBlock(buffer)
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+
+  if (completedImage) return completedImage
+  if (!sawEvent) throw new Error('图片流响应为空。')
+  throw new Error('图片流未返回最终图片。')
 }
 
 function isModelOption(value: unknown): value is ModelOption {

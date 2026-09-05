@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"img-app/backend/internal/history"
 	"img-app/backend/internal/imageops"
@@ -58,7 +60,8 @@ func downloadImageHandler(config appConfig) http.HandlerFunc {
 			return
 		}
 
-		imageBytes, err := loadDownloadImageForConfig(source, config)
+		start := time.Now()
+		imageBytes, err := loadDownloadImage(r.Context(), source, config)
 		if err != nil {
 			slog.Warn("image download rejected", "error", err)
 			status := http.StatusBadRequest
@@ -68,6 +71,8 @@ func downloadImageHandler(config appConfig) http.HandlerFunc {
 			writeJSON(w, status, errorResponse{Error: err.Error()})
 			return
 		}
+		slog.Info("download source ready", "bytes", len(imageBytes), "duration_ms", time.Since(start).Milliseconds())
+		conversionStart := time.Now()
 
 		output := imageBytes
 		contentType, extension, err := imageops.DetectType(imageBytes)
@@ -84,7 +89,15 @@ func downloadImageHandler(config appConfig) http.HandlerFunc {
 			}
 			contentType = "image/jpeg"
 			extension = "jpg"
+		} else if contentType != "image/png" {
+			output, err = imageops.EncodePNG(imageBytes)
+			if err != nil {
+				writeJSON(w, http.StatusUnsupportedMediaType, errorResponse{Error: err.Error()})
+				return
+			}
+			contentType, extension = "image/png", "png"
 		}
+		slog.Info("download conversion complete", "format", format, "bytes", len(output), "duration_ms", time.Since(conversionStart).Milliseconds())
 
 		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="gpt-image.%s"`, extension))
@@ -98,6 +111,10 @@ func downloadImageHandler(config appConfig) http.HandlerFunc {
 }
 
 func loadDownloadImageForConfig(source string, config appConfig) ([]byte, error) {
+	return loadDownloadImage(context.Background(), source, config)
+}
+
+func loadDownloadImage(ctx context.Context, source string, config appConfig) ([]byte, error) {
 	if id, ok := history.ParseImagePath(source); ok {
 		if config.Database == nil {
 			return nil, fmt.Errorf("history image storage is unavailable")
@@ -111,7 +128,16 @@ func loadDownloadImageForConfig(source string, config appConfig) ([]byte, error)
 		}
 		return imageops.DecodeDataURL(image)
 	}
-	return imageops.LoadImage(source, config.ImageSourceRegistry)
+	if config.Database != nil && strings.HasPrefix(source, "https://") {
+		data, err := loadCachedImage(ctx, config.Database, source)
+		if err != nil && err != errNotFound {
+			return nil, err
+		}
+		if err == nil {
+			return data, nil
+		}
+	}
+	return imageops.LoadImageWithContext(ctx, source, config.ImageSourceRegistry)
 }
 
 func ensureJSONBodyEnded(decoder *json.Decoder) error {

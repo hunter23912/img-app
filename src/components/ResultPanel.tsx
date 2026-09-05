@@ -68,9 +68,7 @@ export function ResultPanel({
 
   const downloadStatus =
     downloadStage === "processing"
-      ? format === "jpg"
-        ? "JPG 压缩中..."
-        : "正在准备 PNG..."
+      ? "正在读取原图并处理，首次下载可能较慢..."
       : "图片下载中...";
   const messageStyle = {
     info: "border-sky-200/80 bg-sky-50/80 text-sky-900",

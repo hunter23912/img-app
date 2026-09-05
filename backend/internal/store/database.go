@@ -174,14 +174,33 @@ func (d *appDatabase) migrate() error {
 		applied = 3
 	}
 	if applied < 4 {
-		return d.applyImageModelsMigration()
+		if err := d.applyImageModelsMigration(); err != nil {
+			return err
+		}
 	}
 	exists, err := d.tableExists("image_models")
 	if err != nil {
 		return fmt.Errorf("check image models table: %w", err)
 	}
 	if !exists {
-		return d.applyImageModelsMigration()
+		if err := d.applyImageModelsMigration(); err != nil {
+			return err
+		}
+	}
+	if applied < 5 {
+		tx, err := d.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		// 保留原始链接，旧页面仍能用它找到已缓存的图片。
+		if _, err := tx.Exec(`ALTER TABLE image_tasks ADD COLUMN source_url TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (5, ?)`, nowString()); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
 	return nil
 }

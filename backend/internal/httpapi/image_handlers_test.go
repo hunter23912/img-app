@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"img-app/backend/internal/store"
@@ -31,7 +32,7 @@ func TestGenerateHandlerDoesNotPersistFailedTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/generate", bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/api/generate?stream=false", bytes.NewReader(body))
 	generateHandler(appConfig{
 		Endpoint: relay.URL,
 		APIKey:   "test-key",
@@ -47,5 +48,23 @@ func TestGenerateHandlerDoesNotPersistFailedTask(t *testing.T) {
 	}
 	if len(page.Tasks) != 0 {
 		t.Fatalf("failed task history = %#v, want empty", page.Tasks)
+	}
+}
+
+func TestGenerateHandlerDefaultsToSSE(t *testing.T) {
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"b64_json":"` + testPNGBase64 + `"}]}`))
+	}))
+	defer relay.Close()
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/generate", bytes.NewBufferString(`{"prompt":"test"}`))
+	generateHandler(appConfig{Endpoint: relay.URL, APIKey: "test-key"}).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("response = %d %q %s", recorder.Code, recorder.Header().Get("Content-Type"), recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "image_generate.completed") || !strings.Contains(recorder.Body.String(), "data:image/png;base64,") {
+		t.Fatalf("SSE response = %s", recorder.Body.String())
 	}
 }

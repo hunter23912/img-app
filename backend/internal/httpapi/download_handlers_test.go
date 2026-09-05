@@ -15,11 +15,143 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"img-app/backend/internal/history"
 	"img-app/backend/internal/imageops"
 	"img-app/backend/internal/store"
 )
+
+func TestLegacyURLDownloadCachesLocallyAcrossRestart(t *testing.T) {
+	data := testPNG(t, color.NRGBA{R: 44, G: 66, B: 88, A: 255})
+	calls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	defer func() { http.DefaultTransport = originalTransport }()
+
+	path := filepath.Join(t.TempDir(), "history.db")
+	db, err := store.OpenDatabase(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { db.Close() }()
+	id, err := db.CreateTask("edit", store.ImageTaskInput{Prompt: "old image", Model: defaultModel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := server.URL + "/old.png"
+	if err := db.CompleteTask(id, source); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, format := range []string{"jpg", "png"} {
+		res := serveDownloadRequest(t, downloadImageHandler(appConfig{Database: db}), downloadRequest{Source: source, Format: format})
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", format, res.Code, res.Body.String())
+		}
+		if format == "png" && !bytes.Equal(res.Body.Bytes(), data) {
+			t.Fatal("PNG changed")
+		}
+		if calls != 1 {
+			t.Fatalf("remote requests = %d, want 1", calls)
+		}
+		db.Close()
+		db, err = store.OpenDatabase(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server.Close()
+	}
+	page, err := db.ListTasks(5, "")
+	if err != nil || len(page.Tasks) != 1 || page.Tasks[0].Image != history.ImagePath(id) {
+		t.Fatalf("cached history: %#v, %v", page, err)
+	}
+	res := serveDownloadRequest(t, downloadImageHandler(appConfig{Database: db}), downloadRequest{Source: history.ImagePath(id), Format: "jpg"})
+	if res.Code != http.StatusOK {
+		t.Fatalf("local history: %d %s", res.Code, res.Body.String())
+	}
+}
+
+func TestGeneratedURLIsStoredLocally(t *testing.T) {
+	data := testPNG(t, color.NRGBA{R: 10, A: 255})
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	defer func() { http.DefaultTransport = originalTransport }()
+	db, err := store.OpenDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	source := persistImageResult(appConfig{Database: db}, "generate", generateRequest{Prompt: "test"}, server.URL+"/image")
+	for i := 0; i < 50; i++ {
+		if cached, cacheErr := db.CachedImageSource(source); cacheErr == nil && history.IsBase64ImageDataURL(cached) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if cached, cacheErr := db.CachedImageSource(source); cacheErr != nil || !history.IsBase64ImageDataURL(cached) {
+		t.Fatalf("image was not cached: %v", cacheErr)
+	}
+	server.Close()
+	res := serveDownloadRequest(t, downloadImageHandler(appConfig{Database: db}), downloadRequest{Source: source, Format: "png"})
+	if res.Code != http.StatusOK || !bytes.Equal(res.Body.Bytes(), data) {
+		t.Fatal("local download failed")
+	}
+}
+
+func TestFailedLegacyDownloadPreservesURL(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusGone) }))
+	defer server.Close()
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	defer func() { http.DefaultTransport = originalTransport }()
+	db, err := store.OpenDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	id, err := db.CreateTask("edit", store.ImageTaskInput{Prompt: "expired"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := server.URL + "/expired"
+	if err := db.CompleteTask(id, source); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadDownloadImageForConfig(source, appConfig{Database: db}); err == nil {
+		t.Fatal("expected download error")
+	}
+	value, err := db.CachedImageSource(source)
+	if err != nil || value != source {
+		t.Fatal("failed download changed original URL")
+	}
+}
+
+func TestPNGDownloadConvertsJPEGSource(t *testing.T) {
+	var encoded bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 3, 2))
+	if err := jpeg.Encode(&encoded, img, nil); err != nil {
+		t.Fatal(err)
+	}
+	source := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes())
+	res := serveDownloadRequest(t, downloadImageHandler(appConfig{}), downloadRequest{Source: source, Format: "png"})
+	if res.Code != http.StatusOK || res.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("response: %d %s", res.Code, res.Body.String())
+	}
+	if _, err := png.Decode(bytes.NewReader(res.Body.Bytes())); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestDownloadImagePNGPreservesSource(t *testing.T) {
 	source := testPNG(t, color.NRGBA{R: 12, G: 34, B: 56, A: 255})

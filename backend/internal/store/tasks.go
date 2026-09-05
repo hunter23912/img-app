@@ -31,6 +31,23 @@ func (d *appDatabase) completeTask(id, image string) error {
 	return err
 }
 
+func (d *appDatabase) CachedImageSource(source string) (string, error) {
+	var image string
+	err := d.db.QueryRow(`SELECT image_url FROM image_tasks WHERE status = 'succeeded' AND (source_url = ? OR image_url = ?) ORDER BY CASE WHEN source_url = ? THEN 0 ELSE 1 END LIMIT 1`, source, source, source).Scan(&image)
+	if err == sql.ErrNoRows {
+		return "", errNotFound
+	}
+	return image, err
+}
+
+func (d *appDatabase) CacheImageSource(source, data string) error {
+	if !history.IsBase64ImageDataURL(data) {
+		return fmt.Errorf("invalid cached image data")
+	}
+	_, err := d.db.Exec(`UPDATE image_tasks SET source_url = ?, image_url = ? WHERE status = 'succeeded' AND image_url = ?`, source, data, source)
+	return err
+}
+
 func (d *appDatabase) historyImageData(id string) (string, error) {
 	var image string
 	err := d.db.QueryRow(`SELECT image_url FROM image_tasks WHERE id = ? AND status = 'succeeded'`, id).Scan(&image)

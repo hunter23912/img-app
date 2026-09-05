@@ -1,16 +1,20 @@
 package provider
 
-import "mime/multipart"
+import (
+	"context"
+	"mime/multipart"
+)
 
 func BuildImagesURL(endpoint, action string) (string, error) {
 	return buildImagesURL(endpoint, action)
 }
 
-func CallGenerate(generateURL, apiKey string, input ImageRequest) (string, error) {
-	return callRelayGenerate(generateURL, apiKey, input)
+func CallGenerate(ctx context.Context, generateURL, apiKey string, input ImageRequest, onEvent ImageEventHandler) (string, error) {
+	return callRelayGenerateWithContext(ctx, generateURL, apiKey, input, onEvent)
 }
 
 func CallEdit(
+	ctx context.Context,
 	editURL string,
 	apiKey string,
 	input ImageRequest,
@@ -18,6 +22,7 @@ func CallEdit(
 	imageHeader *multipart.FileHeader,
 	maskFile multipart.File,
 	maskHeader *multipart.FileHeader,
+	onEvent ImageEventHandler,
 ) (string, error) {
-	return callRelayEdit(editURL, apiKey, input, imageFile, imageHeader, maskFile, maskHeader)
+	return callRelayEditWithContext(ctx, editURL, apiKey, input, imageFile, imageHeader, maskFile, maskHeader, onEvent)
 }

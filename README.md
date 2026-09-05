@@ -14,6 +14,8 @@
 - 提示词预设：内置预设、创建、编辑、删除，以及从旧版 localStorage 迁移自定义预设。
 - 生成历史：SQLite 保存最近 50 条成功的生成或编辑记录，支持分页和删除。
 - 结果下载：支持 PNG 原图和指定质量的 JPG 转换，透明区域转 JPG 时使用白色背景。
+- 支持 OpenAI Images 兼容的同步接口，以及带 `task_id` 的异步图片接口；异步接口会自动轮询任务状态。
+- 外部图片优先由手机直接读取和转换，跨域不允许时自动回退到 Go 后端；远程结果会在后台缓存到 SQLite。
 - 支持浅色、深色主题和移动端布局。
 
 当前版本不会自动请求中转站的 /v1/models。/api/models 是本应用自己的模型管理接口，用来返回三个固定模型和当前配置下保存的自定义模型；它不是中转站的模型查询接口。
@@ -213,7 +215,7 @@ Content-Type: application/json
 | 1:1 | 1024x1024 | 2048x2048 |
 | 9:16 | 720x1280 | 1440x2560 |
 
-请求成功后返回：
+使用 `?stream=false` 时请求成功后返回：
 
 ~~~json
 {
@@ -221,7 +223,40 @@ Content-Type: application/json
 }
 ~~~
 
-中转站返回 b64_json 或图片 URL 时，后端都会统一转换为 data URL。启用 SQLite 时，成功结果会写入历史记录并返回 `/api/history/{taskID}/image`；未启用 SQLite 时直接返回 data URL。
+默认请求返回 Server-Sent Events（SSE）：后端先返回 started 事件，收到上游部分图片时转发 partial_image 事件，最终返回 completed 事件。上游不支持 SSE 时，后端会把普通 JSON 结果包装成 completed 事件。请求 `?stream=false` 可兼容旧版 JSON 响应。
+
+#### 异步接口接入
+
+部分中转站（例如 Mikoto）不会在一次请求中直接返回图片，而是先创建任务：
+
+~~~text
+POST /v1/images/generations/async
+        ↓
+{ "task_id": "img_xxx", "status": "running" }
+        ↓ 每 3 秒查询
+GET /v1/images/tasks/img_xxx
+        ↓
+{ "status": "success", "result": { "data": [...] } }
+~~~
+
+当 endpoint 是 `api.mikoto.vip`，或用户配置的 endpoint 已以 `/async` 结尾时，后端会自动使用异步路径。生成和编辑分别使用 `/images/generations/async`、`/images/edits/async`，并将 `n` 限制为 1（服务商文档要求异步接口单张生成）。异步创建请求会请求 `response_format: "b64_json"`；如果服务商仍返回 URL，后端也支持读取 `result.data[].url`。
+
+后端在本次请求期间保留创建响应中的 `task_id`，并使用同一个 API key 轮询任务。`queued` 和 `running` 状态继续等待，`success` 从 `result.data` 提取 `url` 或 `b64_json`，`error`/`failed` 读取 `error.message`。轮询遇到 408、429、5xx 或临时网络错误只重试查询，不会重新提交生图请求，避免重复扣费。一次异步调用的总等待上限由 relay 的 10 分钟请求上下文控制，单次状态查询最多等待 60 秒。当前异步等待依附于这次 HTTP 请求；如果后端进程在完成前重启，需要重新提交任务。
+
+后端对前端仍可返回 SSE：先发送 `started`，异步任务完成后发送 `completed`；等待期间每 15 秒发送 SSE 注释心跳，避免反向代理把长时间无数据的连接关闭。使用 `?stream=false` 时，等待完成后直接返回 JSON。
+
+#### 图片结果为什么可能“不显示”
+
+服务商的成功响应可能是以下任一种格式：
+
+~~~text
+data[0].url       外部图片 URL
+data[0].b64_json  Base64 图片数据
+image/*           直接返回的二进制图片
+SSE               流式 partial/final 事件
+~~~
+
+后端会把 Base64 和二进制统一为可识别的图片数据，并兼容 URL 结果。URL 可以直接用于 `<img>` 显示；如果服务商返回的是临时 URL、URL 过期、响应被截断或中转站没有允许浏览器读取，直接下载或历史恢复就可能失败。生成完成后，启用 SQLite 时后端会在后台把外部 URL 下载并保存为 Base64，保存成功后历史列表自动改为 `/api/history/{taskID}/image`，不再依赖远程 URL。缓存失败时仍保留原 URL，便于稍后重试。
 
 ### 图编辑
 
@@ -242,9 +277,9 @@ Content-Type: multipart/form-data
 | output_format | 否 | 输出格式，默认 png |
 | n | 否 | 生成数量，默认 1 |
 | image | 是 | 原图文件 |
-| mask | 否 | 可选遮罩文件，供 API 调用者使用 |
+| mask | 否 | 遮罩文件 |
 
-图编辑请求会以 multipart 形式转发给中转站的 /v1/images/edits。
+手机到 Go 后端使用 multipart 上传，Go 再按 Playground 和 OpenAI Images API 的传统编辑方式，以 multipart 转发到中转站的 `/v1/images/edits` 或 `/v1/images/edits/async`：原图字段为 `image[]`，遮罩字段为 `mask`。异步编辑创建成功后仍使用同一个任务查询接口轮询；原图不会写入 SQLite，也不需要 `APP_PUBLIC_URL` 或公网 URL。
 
 ### 历史记录
 
@@ -263,7 +298,9 @@ limit 范围为 1-5，不传时为 5。返回格式：
 }
 ~~~
 
-中转站返回的图片 URL 会由后端下载并转换为 data URL；返回 base64 图片时也会统一保存为 data URL。历史列表中的 image 会指向 `/api/history/{taskID}/image`，避免一次性把大图放进分页响应。
+新图片返回后会先记录任务和原始结果；如果结果是外部 HTTPS URL，后端在后台下载并缓存 Base64。缓存完成后，SQLite 的 `image_url` 保存本地图片数据，历史列表只返回 `/api/history/{taskID}/image`，而 `source_url` 保留原始 URL 用于追踪和兼容旧记录。后台缓存不会阻塞前端的生成完成事件。
+
+旧历史记录中的外部 HTTPS URL 也支持迁移式缓存：第一次查看或下载时，如果本地还没有 Base64，后端会读取远程图片并写回同一条 SQLite 记录；以后从历史路径读取，不再访问中转站。远程链接已经过期或服务端不再提供完整图片时，无法从本地恢复不存在的数据。
 
 ### 图片下载
 
@@ -278,7 +315,11 @@ Content-Type: application/json
 }
 ~~~
 
-format 支持 png 和 jpg。外部图片 URL 必须是 HTTPS，且必须是当前后端生成或恢复的可信来源；data URL 可以直接处理。JPG 质量范围为 1-100，默认 95。
+format 支持 png 和 jpg，输入支持 PNG、JPEG、GIF、WebP。非 PNG 原图在选择 PNG 时会实际转换。外部图片 URL 必须是 HTTPS，且必须是当前后端生成或数据库中的可信来源；data URL 可以直接处理。JPG 质量范围为 1-100，默认 95。日志分别记录首字节、原图读取和格式转换耗时，便于区分远程传输慢与压缩慢。
+
+对于外部 HTTPS 图片，前端下载会优先让手机直接 `fetch` 图片：PNG 直接保存，JPG 使用手机端 Canvas 转换后保存。这样不会再经过“手机 → Go → 中转站 → Go → 手机”的重复传输。若服务商没有返回允许当前网页来源的 CORS，或浏览器无法读取图片，前端自动回退到 `/api/download/image`，由 Go 后端读取并转换。历史路径和 Base64 结果始终直接使用本地后端数据。
+
+第一次下载外部大图可能仍然较慢，因为必须先把完整原图传输到手机或 Go 后端；JPG 编码通常只占很短时间。后端对支持 `Accept-Ranges: bytes` 且大于 2 MB 的图片使用 4 路 Range 并发读取，并记录首字节、原图读取和转换耗时。成功缓存后，后续不同 JPG 质量的下载只读取本地原图，通常会很快。
 
 ## 开发和验证
 
@@ -327,10 +368,10 @@ ssh server 'sudo systemctl restart img-app-backend'
 ## 已知限制
 
 - 当前只按 OpenAI Images API 兼容格式调用中转站，不同中转站的额外参数不会自动适配。
-- 生成和编辑使用同步等待模式，后端请求超时约为 330 秒。
+- 普通中转站使用同步等待；支持异步路径的中转站会按任务 ID 轮询，单次 relay 请求最长等待约 10 分钟。
 - 没有用户系统、登录、鉴权、限流和计费功能，不适合直接暴露到公网。
 - 不会自动查询中转站 /v1/models；模型列表需要使用固定模型或手动添加自定义模型。
-- 历史中的外部图片仍依赖中转站 URL 的有效期；base64 结果才会由本地数据库保存图片数据。
+- 尚未缓存的旧历史图片仍依赖中转站 URL 的有效期；成功读取一次后即可本地保存。
 
 ## 常见问题
 

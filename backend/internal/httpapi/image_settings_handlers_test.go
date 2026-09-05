@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"image/color"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -221,7 +222,7 @@ func TestEditUsesSavedImageSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := part.Write([]byte("not-an-image")); err != nil {
+	if _, err := part.Write(testPNG(t, color.NRGBA{R: 20, G: 40, B: 60, A: 255})); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Close(); err != nil {
